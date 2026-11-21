@@ -1,0 +1,255 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Profil pendidik atau operator admin untuk sistem pembinaan kemandirian HUMANIS SMK.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "displayName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "email": { "type": "string", "format": "email", "maxLength": 180 },
+        "nip": { "type": "string", "maxLength": 40 },
+        "staffRole": { "type": "string", "enum": ["admin", "wali_kelas", "guru_bk", "kepala_sekolah"], "maxLength": 30 },
+        "kelasBinaan": { "type": "string", "maxLength": 40 },
+        "jurusan": { "type": "string", "maxLength": 80 },
+        "schoolName": { "type": "string", "maxLength": 120 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "displayName", "email", "staffRole", "createdAt", "updatedAt"]
+    },
+    "RoleAssignment": {
+      "title": "RoleAssignment",
+      "description": "Manajemen peran dan hak akses operator/guru dalam program HUMANIS SMK.",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "nama": { "type": "string", "minLength": 2, "maxLength": 120 },
+        "nip": { "type": "string", "maxLength": 40 },
+        "email": { "type": "string", "maxLength": 180 },
+        "role": { "type": "string", "enum": ["admin", "wali_kelas", "guru_bk", "kepala_sekolah"], "maxLength": 30 },
+        "kelasBinaan": { "type": "string", "maxLength": 40 },
+        "aktif": { "type": "boolean" },
+        "permissions": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "nama", "email", "role", "aktif", "permissions", "createdAt", "updatedAt"]
+    },
+    "ThemeSetting": {
+      "title": "ThemeSetting",
+      "description": "Kostumisasi tema, warna aksen, radius, dan identitas sekolah pengguna.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "mode": { "type": "string", "enum": ["light", "dark"], "maxLength": 10 },
+        "accentColor": { "type": "string", "maxLength": 20 },
+        "cardRadius": { "type": "string", "enum": ["compact", "balanced", "rounded"], "maxLength": 20 },
+        "density": { "type": "string", "enum": ["comfortable", "compact"], "maxLength": 20 },
+        "schoolName": { "type": "string", "maxLength": 120 },
+        "academicYear": { "type": "string", "maxLength": 30 },
+        "programSubtitle": { "type": "string", "maxLength": 160 },
+        "gridColumns": { "type": "number" },
+        "gridRows": { "type": "number" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "mode", "accentColor", "cardRadius", "density", "updatedAt"]
+    },
+    "Student": {
+      "title": "Student",
+      "description": "Data induk siswa SMK yang dibina dalam program HUMANIS.",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "nisn": { "type": "string", "minLength": 4, "maxLength": 20 },
+        "namaLengkap": { "type": "string", "minLength": 2, "maxLength": 120 },
+        "jenisKelamin": { "type": "string", "enum": ["L", "P"], "maxLength": 2 },
+        "jurusan": { "type": "string", "minLength": 2, "maxLength": 80 },
+        "kelas": { "type": "string", "minLength": 2, "maxLength": 40 },
+        "noHp": { "type": "string", "maxLength": 30 },
+        "namaOrangTua": { "type": "string", "maxLength": 120 },
+        "nomorOrangTua": { "type": "string", "maxLength": 30 },
+        "alamat": { "type": "string", "maxLength": 300 },
+        "portalUsername": { "type": "string", "maxLength": 60 },
+        "latestScore": { "type": "number" },
+        "latestCategory": { "type": "string", "maxLength": 40 },
+        "latestCondition": { "type": "string", "enum": ["baik", "cukup", "perlu_pendampingan"], "maxLength": 30 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "nisn", "namaLengkap", "jenisKelamin", "jurusan", "kelas", "createdAt", "updatedAt"]
+    },
+    "Diagnostic": {
+      "title": "Diagnostic",
+      "description": "Hasil tes diagnostik awal kemandirian siswa skala Likert 1-5.",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "studentId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "studentName": { "type": "string", "maxLength": 120 },
+        "kelas": { "type": "string", "maxLength": 40 },
+        "tanggungJawab": { "type": "number" },
+        "disiplin": { "type": "number" },
+        "inisiatif": { "type": "number" },
+        "pengambilanKeputusan": { "type": "number" },
+        "manajemenDiri": { "type": "number" },
+        "totalScore": { "type": "number" },
+        "category": { "type": "string", "enum": ["Sangat Rendah", "Rendah", "Sedang", "Baik", "Sangat Baik"], "maxLength": 30 },
+        "assessedDate": { "type": "string", "maxLength": 30 },
+        "notes": { "type": "string", "maxLength": 500 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "studentId", "studentName", "kelas", "tanggungJawab", "disiplin", "inisiatif", "pengambilanKeputusan", "manajemenDiri", "totalScore", "category", "assessedDate", "createdAt"]
+    },
+    "HumanisProgress": {
+      "title": "HumanisProgress",
+      "description": "Dokumentasi 7 tahapan pembinaan HUMANIS per siswa.",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "studentId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "studentName": { "type": "string", "maxLength": 120 },
+        "kelas": { "type": "string", "maxLength": 40 },
+        "completedStages": { "type": "array" },
+        "hMinat": { "type": "string", "maxLength": 400 },
+        "hBakat": { "type": "string", "maxLength": 400 },
+        "hCitaCita": { "type": "string", "maxLength": 400 },
+        "hKeunggulan": { "type": "string", "maxLength": 400 },
+        "uPemahamanKerja": { "type": "string", "maxLength": 400 },
+        "uKesadaranMandiri": { "type": "string", "maxLength": 400 },
+        "uCatatanDiskusi": { "type": "string", "maxLength": 500 },
+        "mKeteladananGuru": { "type": "string", "maxLength": 400 },
+        "mResponSiswa": { "type": "string", "maxLength": 400 },
+        "aProgresDicapai": { "type": "string", "maxLength": 400 },
+        "aBentukApresiasi": { "type": "string", "maxLength": 400 },
+        "aTanggal": { "type": "string", "maxLength": 30 },
+        "nKebiasaanPositif": { "type": "string", "maxLength": 400 },
+        "nTugasKemandirian": { "type": "string", "maxLength": 400 },
+        "iNilaiTertanam": { "type": "string", "maxLength": 400 },
+        "iRefleksiSiswa": { "type": "string", "maxLength": 500 },
+        "sPeranOrangTua": { "type": "string", "maxLength": 400 },
+        "sPeranGuru": { "type": "string", "maxLength": 400 },
+        "sTindakLanjut": { "type": "string", "maxLength": 500 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "studentId", "studentName", "kelas", "completedStages", "createdAt", "updatedAt"]
+    },
+    "Observation": {
+      "title": "Observation",
+      "description": "Observasi berkala kondisi akademik, sosial, emosional, dan tingkat kemandirian siswa.",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "studentId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "studentName": { "type": "string", "maxLength": 120 },
+        "kelas": { "type": "string", "maxLength": 40 },
+        "tanggal": { "type": "string", "maxLength": 30 },
+        "kondisiAkademik": { "type": "string", "maxLength": 400 },
+        "kondisiSosial": { "type": "string", "maxLength": 400 },
+        "kondisiEmosional": { "type": "string", "maxLength": 400 },
+        "tingkatKemandirian": { "type": "string", "enum": ["baik", "cukup", "perlu_pendampingan"], "maxLength": 30 },
+        "skorKemandirian": { "type": "number" },
+        "observerName": { "type": "string", "maxLength": 120 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "studentId", "studentName", "kelas", "tanggal", "kondisiAkademik", "kondisiSosial", "kondisiEmosional", "tingkatKemandirian", "skorKemandirian", "createdAt"]
+    },
+    "CoachingProcess": {
+      "title": "CoachingProcess",
+      "description": "Timeline log proses pembinaan siswa oleh Wali Kelas, Guru BK, atau Operator.",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "studentId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "studentName": { "type": "string", "maxLength": 120 },
+        "kelas": { "type": "string", "maxLength": 40 },
+        "tanggal": { "type": "string", "maxLength": 30 },
+        "tindakan": { "type": "string", "minLength": 2, "maxLength": 500 },
+        "tahapHumanis": { "type": "string", "enum": ["H", "U", "M", "A", "N", "I", "S"], "maxLength": 5 },
+        "hasilSementara": { "type": "string", "minLength": 2, "maxLength": 500 },
+        "petugasRole": { "type": "string", "enum": ["admin", "wali_kelas", "guru_bk", "kepala_sekolah"], "maxLength": 30 },
+        "petugasNama": { "type": "string", "maxLength": 120 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "studentId", "studentName", "kelas", "tanggal", "tindakan", "tahapHumanis", "hasilSementara", "petugasRole", "createdAt"]
+    },
+    "GoodStatement": {
+      "title": "GoodStatement",
+      "description": "Pernyataan afirmasi positif siswa (manual atau voice-to-text).",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "studentId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "studentName": { "type": "string", "maxLength": 120 },
+        "kelas": { "type": "string", "maxLength": 40 },
+        "kalimat": { "type": "string", "minLength": 2, "maxLength": 400 },
+        "sumber": { "type": "string", "enum": ["manual", "voice"], "maxLength": 20 },
+        "tanggal": { "type": "string", "maxLength": 30 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "studentId", "studentName", "kelas", "kalimat", "sumber", "tanggal", "createdAt"]
+    },
+    "ReportRecord": {
+      "title": "ReportRecord",
+      "description": "Arsip laporan perkembangan dan hasil analisis Gemini AI untuk siswa atau kelas.",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "reportType": { "type": "string", "enum": ["individu", "kelas", "ai_insight"], "maxLength": 20 },
+        "studentId": { "type": "string", "maxLength": 128 },
+        "studentName": { "type": "string", "maxLength": 120 },
+        "kelas": { "type": "string", "maxLength": 40 },
+        "title": { "type": "string", "minLength": 2, "maxLength": 160 },
+        "analisisSiswa": { "type": "string", "minLength": 2, "maxLength": 1500 },
+        "saranTindakan": { "type": "array" },
+        "prediksiPerkembangan": { "type": "string", "enum": ["Meningkat", "Stabil", "Berisiko Menurun"], "maxLength": 30 },
+        "generatedBy": { "type": "string", "maxLength": 120 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "reportType", "title", "analisisSiswa", "saranTindakan", "prediksiPerkembangan", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Profil guru / operator admin / kepala sekolah."
+    },
+    "/roleAssignments/{assignmentId}": {
+      "schema": { "$ref": "#/entities/RoleAssignment" },
+      "description": "Daftar penugasan peran dan hak akses staf sekolah."
+    },
+    "/themeSettings/{userId}": {
+      "schema": { "$ref": "#/entities/ThemeSetting" },
+      "description": "Pengaturan tema dan identitas sekolah pengguna."
+    },
+    "/students/{studentId}": {
+      "schema": { "$ref": "#/entities/Student" },
+      "description": "Koleksi data siswa binaan HUMANIS SMK."
+    },
+    "/diagnostics/{diagnosticId}": {
+      "schema": { "$ref": "#/entities/Diagnostic" },
+      "description": "Hasil asesmen diagnostik awal kemandirian siswa."
+    },
+    "/humanis/{humanisId}": {
+      "schema": { "$ref": "#/entities/HumanisProgress" },
+      "description": "Progres dan dokumentasi 7 tahapan HUMANIS per siswa."
+    },
+    "/observations/{observationId}": {
+      "schema": { "$ref": "#/entities/Observation" },
+      "description": "Catatan observasi kondisi akademik, sosial, emosional, dan kemandirian."
+    },
+    "/processes/{processId}": {
+      "schema": { "$ref": "#/entities/CoachingProcess" },
+      "description": "Timeline tindakan dan proses pembinaan siswa."
+    },
+    "/goodStatements/{statementId}": {
+      "schema": { "$ref": "#/entities/GoodStatement" },
+      "description": "Catatan pernyataan positif siswa (input manual & voice-to-text)."
+    },
+    "/reports/{reportId}": {
+      "schema": { "$ref": "#/entities/ReportRecord" },
+      "description": "Laporan perkembangan dan analisis rekomendasi AI."
+    }
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "name": "HUMANIS SMK",
+  "description": "Platform digital implementasi tahapan HUMANIS untuk asesmen kemandirian, pemantauan karakter, dokumentasi pembinaan, dan analisis AI siswa SMK.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

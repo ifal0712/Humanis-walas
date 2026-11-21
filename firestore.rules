@@ -1,0 +1,435 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Hardened Primitives
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerified() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isEmailAdmin() {
+      return isVerified() && request.auth.token.email == 'alamifal@smkn1sidayu.sch.id';
+    }
+
+    function isOwner(uid) {
+      return isVerified() && request.auth.uid == uid;
+    }
+
+    function isValidDateStr(val) {
+      return val is string && val.size() >= 1 && val.size() <= 30;
+    }
+
+    function isValidOptStr(val, maxLen) {
+      return val is string && val.size() <= maxLen;
+    }
+
+    function isValidStringArray(arr, maxSize) {
+      return arr is list && arr.size() <= maxSize && (arr.size() == 0 || (arr[0] is string && arr[0].size() <= 300));
+    }
+
+    // Entity Validators
+    function isValidUserProfile(data, userId) {
+      return data.keys().hasAll(['uid', 'displayName', 'email', 'staffRole', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['uid', 'displayName', 'email', 'nip', 'staffRole', 'kelasBinaan', 'jurusan', 'schoolName', 'createdAt', 'updatedAt']) &&
+        isValidId(data.uid) &&
+        data.uid == userId &&
+        data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 120 &&
+        data.email is string && data.email.size() >= 3 && data.email.size() <= 180 &&
+        data.staffRole in ['admin', 'wali_kelas', 'guru_bk', 'kepala_sekolah'] &&
+        (!('nip' in data) || isValidOptStr(data.nip, 40)) &&
+        (!('kelasBinaan' in data) || isValidOptStr(data.kelasBinaan, 40)) &&
+        (!('jurusan' in data) || isValidOptStr(data.jurusan, 80)) &&
+        (!('schoolName' in data) || isValidOptStr(data.schoolName, 120)) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidRoleAssignment(data) {
+      return data.keys().hasAll(['ownerId', 'nama', 'email', 'role', 'aktif', 'permissions', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['ownerId', 'nama', 'nip', 'email', 'role', 'kelasBinaan', 'aktif', 'permissions', 'createdAt', 'updatedAt']) &&
+        isValidId(data.ownerId) &&
+        data.nama is string && data.nama.size() >= 2 && data.nama.size() <= 120 &&
+        (!('nip' in data) || isValidOptStr(data.nip, 40)) &&
+        data.email is string && data.email.size() >= 3 && data.email.size() <= 180 &&
+        data.role in ['admin', 'wali_kelas', 'guru_bk', 'kepala_sekolah'] &&
+        (!('kelasBinaan' in data) || isValidOptStr(data.kelasBinaan, 40)) &&
+        data.aktif is bool &&
+        isValidStringArray(data.permissions, 12) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidThemeSetting(data, userId) {
+      return data.keys().hasAll(['userId', 'mode', 'accentColor', 'cardRadius', 'density', 'updatedAt']) &&
+        data.keys().hasOnly(['userId', 'mode', 'accentColor', 'cardRadius', 'density', 'schoolName', 'academicYear', 'programSubtitle', 'gridColumns', 'gridRows', 'updatedAt']) &&
+        isValidId(data.userId) &&
+        data.userId == userId &&
+        data.mode in ['light', 'dark'] &&
+        data.accentColor is string && data.accentColor.size() >= 4 && data.accentColor.size() <= 20 &&
+        data.cardRadius in ['compact', 'balanced', 'rounded'] &&
+        data.density in ['comfortable', 'compact'] &&
+        (!('schoolName' in data) || isValidOptStr(data.schoolName, 120)) &&
+        (!('academicYear' in data) || isValidOptStr(data.academicYear, 30)) &&
+        (!('programSubtitle' in data) || isValidOptStr(data.programSubtitle, 160)) &&
+        (!('gridColumns' in data) || (data.gridColumns is number && data.gridColumns >= 2 && data.gridColumns <= 6)) &&
+        (!('gridRows' in data) || (data.gridRows is number && data.gridRows >= 2 && data.gridRows <= 6)) &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidStudent(data) {
+      return data.keys().hasAll(['ownerId', 'nisn', 'namaLengkap', 'jenisKelamin', 'jurusan', 'kelas', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['ownerId', 'nisn', 'namaLengkap', 'jenisKelamin', 'jurusan', 'kelas', 'noHp', 'namaOrangTua', 'nomorOrangTua', 'alamat', 'portalUsername', 'latestScore', 'latestCategory', 'latestCondition', 'createdAt', 'updatedAt']) &&
+        isValidId(data.ownerId) &&
+        data.nisn is string && data.nisn.size() >= 4 && data.nisn.size() <= 20 &&
+        data.namaLengkap is string && data.namaLengkap.size() >= 2 && data.namaLengkap.size() <= 120 &&
+        data.jenisKelamin in ['L', 'P'] &&
+        data.jurusan is string && data.jurusan.size() >= 2 && data.jurusan.size() <= 80 &&
+        data.kelas is string && data.kelas.size() >= 2 && data.kelas.size() <= 40 &&
+        (!('noHp' in data) || isValidOptStr(data.noHp, 30)) &&
+        (!('namaOrangTua' in data) || isValidOptStr(data.namaOrangTua, 120)) &&
+        (!('nomorOrangTua' in data) || isValidOptStr(data.nomorOrangTua, 30)) &&
+        (!('alamat' in data) || isValidOptStr(data.alamat, 300)) &&
+        (!('portalUsername' in data) || isValidOptStr(data.portalUsername, 60)) &&
+        (!('latestScore' in data) || (data.latestScore is number && data.latestScore >= 0 && data.latestScore <= 100)) &&
+        (!('latestCategory' in data) || isValidOptStr(data.latestCategory, 40)) &&
+        (!('latestCondition' in data) || data.latestCondition in ['baik', 'cukup', 'perlu_pendampingan']) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidDiagnostic(data) {
+      return data.keys().hasAll(['ownerId', 'studentId', 'studentName', 'kelas', 'tanggungJawab', 'disiplin', 'inisiatif', 'pengambilanKeputusan', 'manajemenDiri', 'totalScore', 'category', 'assessedDate', 'createdAt']) &&
+        data.keys().hasOnly(['ownerId', 'studentId', 'studentName', 'kelas', 'tanggungJawab', 'disiplin', 'inisiatif', 'pengambilanKeputusan', 'manajemenDiri', 'totalScore', 'category', 'assessedDate', 'notes', 'createdAt']) &&
+        isValidId(data.ownerId) &&
+        isValidId(data.studentId) &&
+        data.studentName is string && data.studentName.size() >= 1 && data.studentName.size() <= 120 &&
+        data.kelas is string && data.kelas.size() >= 1 && data.kelas.size() <= 40 &&
+        data.tanggungJawab is number && data.tanggungJawab >= 1 && data.tanggungJawab <= 5 &&
+        data.disiplin is number && data.disiplin >= 1 && data.disiplin <= 5 &&
+        data.inisiatif is number && data.inisiatif >= 1 && data.inisiatif <= 5 &&
+        data.pengambilanKeputusan is number && data.pengambilanKeputusan >= 1 && data.pengambilanKeputusan <= 5 &&
+        data.manajemenDiri is number && data.manajemenDiri >= 1 && data.manajemenDiri <= 5 &&
+        data.totalScore is number && data.totalScore >= 0 && data.totalScore <= 100 &&
+        data.category in ['Sangat Rendah', 'Rendah', 'Sedang', 'Baik', 'Sangat Baik'] &&
+        isValidDateStr(data.assessedDate) &&
+        (!('notes' in data) || isValidOptStr(data.notes, 500)) &&
+        data.createdAt is timestamp;
+    }
+
+    function isValidHumanis(data) {
+      return data.keys().hasAll(['ownerId', 'studentId', 'studentName', 'kelas', 'completedStages', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly([
+          'ownerId', 'studentId', 'studentName', 'kelas', 'completedStages',
+          'hMinat', 'hBakat', 'hCitaCita', 'hKeunggulan',
+          'uPemahamanKerja', 'uKesadaranMandiri', 'uCatatanDiskusi',
+          'mKeteladananGuru', 'mResponSiswa',
+          'aProgresDicapai', 'aBentukApresiasi', 'aTanggal',
+          'nKebiasaanPositif', 'nTugasKemandirian',
+          'iNilaiTertanam', 'iRefleksiSiswa',
+          'sPeranOrangTua', 'sPeranGuru', 'sTindakLanjut',
+          'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.ownerId) &&
+        isValidId(data.studentId) &&
+        data.studentName is string && data.studentName.size() >= 1 && data.studentName.size() <= 120 &&
+        data.kelas is string && data.kelas.size() >= 1 && data.kelas.size() <= 40 &&
+        isValidStringArray(data.completedStages, 7) &&
+        (!('hMinat' in data) || isValidOptStr(data.hMinat, 400)) &&
+        (!('hBakat' in data) || isValidOptStr(data.hBakat, 400)) &&
+        (!('hCitaCita' in data) || isValidOptStr(data.hCitaCita, 400)) &&
+        (!('hKeunggulan' in data) || isValidOptStr(data.hKeunggulan, 400)) &&
+        (!('uPemahamanKerja' in data) || isValidOptStr(data.uPemahamanKerja, 400)) &&
+        (!('uKesadaranMandiri' in data) || isValidOptStr(data.uKesadaranMandiri, 400)) &&
+        (!('uCatatanDiskusi' in data) || isValidOptStr(data.uCatatanDiskusi, 500)) &&
+        (!('mKeteladananGuru' in data) || isValidOptStr(data.mKeteladananGuru, 400)) &&
+        (!('mResponSiswa' in data) || isValidOptStr(data.mResponSiswa, 400)) &&
+        (!('aProgresDicapai' in data) || isValidOptStr(data.aProgresDicapai, 400)) &&
+        (!('aBentukApresiasi' in data) || isValidOptStr(data.aBentukApresiasi, 400)) &&
+        (!('aTanggal' in data) || isValidOptStr(data.aTanggal, 30)) &&
+        (!('nKebiasaanPositif' in data) || isValidOptStr(data.nKebiasaanPositif, 400)) &&
+        (!('nTugasKemandirian' in data) || isValidOptStr(data.nTugasKemandirian, 400)) &&
+        (!('iNilaiTertanam' in data) || isValidOptStr(data.iNilaiTertanam, 400)) &&
+        (!('iRefleksiSiswa' in data) || isValidOptStr(data.iRefleksiSiswa, 500)) &&
+        (!('sPeranOrangTua' in data) || isValidOptStr(data.sPeranOrangTua, 400)) &&
+        (!('sPeranGuru' in data) || isValidOptStr(data.sPeranGuru, 400)) &&
+        (!('sTindakLanjut' in data) || isValidOptStr(data.sTindakLanjut, 500)) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidObservation(data) {
+      return data.keys().hasAll(['ownerId', 'studentId', 'studentName', 'kelas', 'tanggal', 'kondisiAkademik', 'kondisiSosial', 'kondisiEmosional', 'tingkatKemandirian', 'skorKemandirian', 'createdAt']) &&
+        data.keys().hasOnly(['ownerId', 'studentId', 'studentName', 'kelas', 'tanggal', 'kondisiAkademik', 'kondisiSosial', 'kondisiEmosional', 'tingkatKemandirian', 'skorKemandirian', 'observerName', 'createdAt']) &&
+        isValidId(data.ownerId) &&
+        isValidId(data.studentId) &&
+        data.studentName is string && data.studentName.size() >= 1 && data.studentName.size() <= 120 &&
+        data.kelas is string && data.kelas.size() >= 1 && data.kelas.size() <= 40 &&
+        isValidDateStr(data.tanggal) &&
+        data.kondisiAkademik is string && data.kondisiAkademik.size() >= 1 && data.kondisiAkademik.size() <= 400 &&
+        data.kondisiSosial is string && data.kondisiSosial.size() >= 1 && data.kondisiSosial.size() <= 400 &&
+        data.kondisiEmosional is string && data.kondisiEmosional.size() >= 1 && data.kondisiEmosional.size() <= 400 &&
+        data.tingkatKemandirian in ['baik', 'cukup', 'perlu_pendampingan'] &&
+        data.skorKemandirian is number && data.skorKemandirian >= 0 && data.skorKemandirian <= 100 &&
+        (!('observerName' in data) || isValidOptStr(data.observerName, 120)) &&
+        data.createdAt is timestamp;
+    }
+
+    function isValidProcess(data) {
+      return data.keys().hasAll(['ownerId', 'studentId', 'studentName', 'kelas', 'tanggal', 'tindakan', 'tahapHumanis', 'hasilSementara', 'petugasRole', 'createdAt']) &&
+        data.keys().hasOnly(['ownerId', 'studentId', 'studentName', 'kelas', 'tanggal', 'tindakan', 'tahapHumanis', 'hasilSementara', 'petugasRole', 'petugasNama', 'createdAt']) &&
+        isValidId(data.ownerId) &&
+        isValidId(data.studentId) &&
+        data.studentName is string && data.studentName.size() >= 1 && data.studentName.size() <= 120 &&
+        data.kelas is string && data.kelas.size() >= 1 && data.kelas.size() <= 40 &&
+        isValidDateStr(data.tanggal) &&
+        data.tindakan is string && data.tindakan.size() >= 2 && data.tindakan.size() <= 500 &&
+        data.tahapHumanis in ['H', 'U', 'M', 'A', 'N', 'I', 'S'] &&
+        data.hasilSementara is string && data.hasilSementara.size() >= 2 && data.hasilSementara.size() <= 500 &&
+        data.petugasRole in ['admin', 'wali_kelas', 'guru_bk', 'kepala_sekolah'] &&
+        (!('petugasNama' in data) || isValidOptStr(data.petugasNama, 120)) &&
+        data.createdAt is timestamp;
+    }
+
+    function isValidGoodStatement(data) {
+      return data.keys().hasAll(['ownerId', 'studentId', 'studentName', 'kelas', 'kalimat', 'sumber', 'tanggal', 'createdAt']) &&
+        data.keys().hasOnly(['ownerId', 'studentId', 'studentName', 'kelas', 'kalimat', 'sumber', 'tanggal', 'createdAt']) &&
+        isValidId(data.ownerId) &&
+        isValidId(data.studentId) &&
+        data.studentName is string && data.studentName.size() >= 1 && data.studentName.size() <= 120 &&
+        data.kelas is string && data.kelas.size() >= 1 && data.kelas.size() <= 40 &&
+        data.kalimat is string && data.kalimat.size() >= 2 && data.kalimat.size() <= 400 &&
+        data.sumber in ['manual', 'voice'] &&
+        isValidDateStr(data.tanggal) &&
+        data.createdAt is timestamp;
+    }
+
+    function isValidReport(data) {
+      return data.keys().hasAll(['ownerId', 'reportType', 'title', 'analisisSiswa', 'saranTindakan', 'prediksiPerkembangan', 'createdAt']) &&
+        data.keys().hasOnly(['ownerId', 'reportType', 'studentId', 'studentName', 'kelas', 'title', 'analisisSiswa', 'saranTindakan', 'prediksiPerkembangan', 'generatedBy', 'createdAt']) &&
+        isValidId(data.ownerId) &&
+        (!('studentId' in data) || isValidOptStr(data.studentId, 128)) &&
+        (!('studentName' in data) || isValidOptStr(data.studentName, 120)) &&
+        (!('kelas' in data) || isValidOptStr(data.kelas, 40)) &&
+        data.reportType in ['individu', 'kelas', 'ai_insight'] &&
+        data.title is string && data.title.size() >= 2 && data.title.size() <= 160 &&
+        data.analisisSiswa is string && data.analisisSiswa.size() >= 2 && data.analisisSiswa.size() <= 1500 &&
+        isValidStringArray(data.saranTindakan, 10) &&
+        data.prediksiPerkembangan in ['Meningkat', 'Stabil', 'Berisiko Menurun'] &&
+        (!('generatedBy' in data) || isValidOptStr(data.generatedBy, 120)) &&
+        data.createdAt is timestamp;
+    }
+
+    // Parent Student Gate
+    function ownsParentStudent(studentId, ownerUid) {
+      return exists(/databases/$(database)/documents/students/$(studentId)) &&
+        (get(/databases/$(database)/documents/students/$(studentId)).data.ownerId == ownerUid || isEmailAdmin());
+    }
+
+    // 1. Users Collection (Prevents self-escalation to admin on create/update unless isEmailAdmin)
+    match /users/{userId} {
+      allow get: if isValidId(userId) && (isOwner(userId) || isEmailAdmin());
+      allow list: if isVerified() && (resource.data.uid == request.auth.uid || isEmailAdmin());
+      allow create: if isValidId(userId) &&
+        isOwner(userId) &&
+        isValidUserProfile(incoming(), userId) &&
+        (incoming().staffRole != 'admin' || isEmailAdmin()) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(userId) &&
+        isValidUserProfile(incoming(), userId) &&
+        (isOwner(userId) || isEmailAdmin()) &&
+        (incoming().staffRole != 'admin' || existing().staffRole == 'admin' || isEmailAdmin()) &&
+        incoming().uid == existing().uid &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'nip', 'staffRole', 'kelasBinaan', 'jurusan', 'schoolName', 'updatedAt']);
+      allow delete: if isValidId(userId) && isEmailAdmin();
+    }
+
+    // 2. Role Assignments Collection (Operator role management)
+    match /roleAssignments/{assignmentId} {
+      allow get: if isValidId(assignmentId) && isVerified() && (existing().ownerId == request.auth.uid || isEmailAdmin());
+      allow list: if isVerified() && (resource.data.ownerId == request.auth.uid || isEmailAdmin());
+      allow create: if isValidId(assignmentId) &&
+        isVerified() &&
+        isValidRoleAssignment(incoming()) &&
+        incoming().ownerId == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(assignmentId) &&
+        isVerified() &&
+        isValidRoleAssignment(incoming()) &&
+        (existing().ownerId == request.auth.uid || isEmailAdmin()) &&
+        incoming().ownerId == existing().ownerId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['nama', 'nip', 'email', 'role', 'kelasBinaan', 'aktif', 'permissions', 'updatedAt']);
+      allow delete: if isValidId(assignmentId) && isVerified() && (existing().ownerId == request.auth.uid || isEmailAdmin());
+    }
+
+    // 3. Theme Settings Collection
+    match /themeSettings/{userId} {
+      allow get: if isValidId(userId) && (isOwner(userId) || isEmailAdmin());
+      allow list: if isVerified() && (resource.data.userId == request.auth.uid || isEmailAdmin());
+      allow create: if isValidId(userId) &&
+        isOwner(userId) &&
+        isValidThemeSetting(incoming(), userId) &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(userId) &&
+        (isOwner(userId) || isEmailAdmin()) &&
+        isValidThemeSetting(incoming(), userId) &&
+        incoming().userId == existing().userId &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['mode', 'accentColor', 'cardRadius', 'density', 'schoolName', 'academicYear', 'programSubtitle', 'gridColumns', 'gridRows', 'updatedAt']);
+      allow delete: if isValidId(userId) && isEmailAdmin();
+    }
+
+    // 4. Students Collection
+    match /students/{studentId} {
+      allow get: if isValidId(studentId) && isVerified() && (existing().ownerId == request.auth.uid || isEmailAdmin());
+      allow list: if isVerified() && (resource.data.ownerId == request.auth.uid || isEmailAdmin());
+      allow create: if isValidId(studentId) &&
+        isVerified() &&
+        isValidStudent(incoming()) &&
+        incoming().ownerId == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(studentId) &&
+        isVerified() &&
+        isValidStudent(incoming()) &&
+        (existing().ownerId == request.auth.uid || isEmailAdmin()) &&
+        incoming().ownerId == existing().ownerId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        (
+          incoming().diff(existing()).affectedKeys().hasOnly(['nisn', 'namaLengkap', 'jenisKelamin', 'jurusan', 'kelas', 'noHp', 'namaOrangTua', 'nomorOrangTua', 'alamat', 'portalUsername', 'updatedAt']) ||
+          incoming().diff(existing()).affectedKeys().hasOnly(['latestScore', 'latestCategory', 'latestCondition', 'updatedAt']) ||
+          isEmailAdmin()
+        );
+      allow delete: if isValidId(studentId) && isVerified() && (existing().ownerId == request.auth.uid || isEmailAdmin());
+    }
+
+    // 5. Diagnostics Collection
+    match /diagnostics/{diagnosticId} {
+      allow get: if isValidId(diagnosticId) && isVerified() && (existing().ownerId == request.auth.uid || isEmailAdmin());
+      allow list: if isVerified() && (resource.data.ownerId == request.auth.uid || isEmailAdmin());
+      allow create: if isValidId(diagnosticId) &&
+        isVerified() &&
+        isValidDiagnostic(incoming()) &&
+        incoming().ownerId == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        ownsParentStudent(incoming().studentId, request.auth.uid);
+      allow update: if false;
+      allow delete: if isValidId(diagnosticId) && isVerified() && (existing().ownerId == request.auth.uid || isEmailAdmin());
+    }
+
+    // 6. HUMANIS Progress Collection
+    match /humanis/{humanisId} {
+      allow get: if isValidId(humanisId) && isVerified() && (existing().ownerId == request.auth.uid || isEmailAdmin());
+      allow list: if isVerified() && (resource.data.ownerId == request.auth.uid || isEmailAdmin());
+      allow create: if isValidId(humanisId) &&
+        isVerified() &&
+        isValidHumanis(incoming()) &&
+        incoming().ownerId == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        ownsParentStudent(incoming().studentId, request.auth.uid);
+      allow update: if isValidId(humanisId) &&
+        isVerified() &&
+        isValidHumanis(incoming()) &&
+        (existing().ownerId == request.auth.uid || isEmailAdmin()) &&
+        incoming().ownerId == existing().ownerId &&
+        incoming().studentId == existing().studentId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'studentName', 'kelas', 'completedStages',
+          'hMinat', 'hBakat', 'hCitaCita', 'hKeunggulan',
+          'uPemahamanKerja', 'uKesadaranMandiri', 'uCatatanDiskusi',
+          'mKeteladananGuru', 'mResponSiswa',
+          'aProgresDicapai', 'aBentukApresiasi', 'aTanggal',
+          'nKebiasaanPositif', 'nTugasKemandirian',
+          'iNilaiTertanam', 'iRefleksiSiswa',
+          'sPeranOrangTua', 'sPeranGuru', 'sTindakLanjut',
+          'updatedAt'
+        ]);
+      allow delete: if isValidId(humanisId) && isVerified() && (existing().ownerId == request.auth.uid || isEmailAdmin());
+    }
+
+    // 7. Observations Collection
+    match /observations/{observationId} {
+      allow get: if isValidId(observationId) && isVerified() && (existing().ownerId == request.auth.uid || isEmailAdmin());
+      allow list: if isVerified() && (resource.data.ownerId == request.auth.uid || isEmailAdmin());
+      allow create: if isValidId(observationId) &&
+        isVerified() &&
+        isValidObservation(incoming()) &&
+        incoming().ownerId == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        ownsParentStudent(incoming().studentId, request.auth.uid);
+      allow update: if false;
+      allow delete: if isValidId(observationId) && isVerified() && (existing().ownerId == request.auth.uid || isEmailAdmin());
+    }
+
+    // 8. Processes Collection
+    match /processes/{processId} {
+      allow get: if isValidId(processId) && isVerified() && (existing().ownerId == request.auth.uid || isEmailAdmin());
+      allow list: if isVerified() && (resource.data.ownerId == request.auth.uid || isEmailAdmin());
+      allow create: if isValidId(processId) &&
+        isVerified() &&
+        isValidProcess(incoming()) &&
+        incoming().ownerId == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        ownsParentStudent(incoming().studentId, request.auth.uid);
+      allow update: if false;
+      allow delete: if isValidId(processId) && isVerified() && (existing().ownerId == request.auth.uid || isEmailAdmin());
+    }
+
+    // 9. Good Statements Collection
+    match /goodStatements/{statementId} {
+      allow get: if isValidId(statementId) && isVerified() && (existing().ownerId == request.auth.uid || isEmailAdmin());
+      allow list: if isVerified() && (resource.data.ownerId == request.auth.uid || isEmailAdmin());
+      allow create: if isValidId(statementId) &&
+        isVerified() &&
+        isValidGoodStatement(incoming()) &&
+        incoming().ownerId == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        ownsParentStudent(incoming().studentId, request.auth.uid);
+      allow update: if false;
+      allow delete: if isValidId(statementId) && isVerified() && (existing().ownerId == request.auth.uid || isEmailAdmin());
+    }
+
+    // 10. Reports Collection
+    match /reports/{reportId} {
+      allow get: if isValidId(reportId) && isVerified() && (existing().ownerId == request.auth.uid || isEmailAdmin());
+      allow list: if isVerified() && (resource.data.ownerId == request.auth.uid || isEmailAdmin());
+      allow create: if isValidId(reportId) &&
+        isVerified() &&
+        isValidReport(incoming()) &&
+        incoming().ownerId == request.auth.uid &&
+        incoming().createdAt == request.time;
+      allow update: if false;
+      allow delete: if isValidId(reportId) && isVerified() && (existing().ownerId == request.auth.uid || isEmailAdmin());
+    }
+  }
+}
