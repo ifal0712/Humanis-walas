@@ -209,3 +209,36 @@ export interface StudentSession {
   username: string;
   studentId: string;
 }
+
+export interface StaffAccountSummary {
+  id: string;
+  username: string;
+  nama: string;
+  nip?: string;
+  email?: string;
+  role: StaffRole;
+  kelasBinaan?: string;
+  aktif: boolean;
+  permissions: string[];
+  createdAt?: string;
+}
+
+export interface StudentAccountSummary {
+  studentId: string;
+  nisn: string;
+  namaLengkap: string;
+  kelas: string;
+  jurusan: string;
+  username: string;
+  aktif: boolean;
+}
+
+export interface StaffSession {
+  token: string;
+  id: string;
+  username: string;
+  displayName: string;
+  email: string;
+  nip?: string;
+  staffRole: StaffRole;
+}

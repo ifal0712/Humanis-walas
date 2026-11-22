@@ -8,27 +8,17 @@ import type {
   StudentPortalData,
   StudentSession,
 } from '../types/humanis';
+import { getStaffAuthToken } from './staffPortalService';
 
-const STUDENT_SESSION_KEY = 'humanis_student_session';
+// Keep Bearer tokens strictly in JS memory (never localStorage/sessionStorage)
+let inMemoryStudentSession: StudentSession | null = null;
 
 export function getSavedStudentSession(): StudentSession | null {
-  try {
-    const raw = localStorage.getItem(STUDENT_SESSION_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as StudentSession;
-    if (!parsed?.token || !parsed?.studentId) return null;
-    return parsed;
-  } catch {
-    return null;
-  }
+  return inMemoryStudentSession;
 }
 
 export function saveStudentSession(session: StudentSession | null): void {
-  if (!session) {
-    localStorage.removeItem(STUDENT_SESSION_KEY);
-    return;
-  }
-  localStorage.setItem(STUDENT_SESSION_KEY, JSON.stringify(session));
+  inMemoryStudentSession = session;
 }
 
 export async function loginStudentAccount(
@@ -161,6 +151,18 @@ export async function updateStudentBiodata(
   return { session, portal };
 }
 
+function staffAuthHeaders(includeJson = true): Record<string, string> {
+  const headers: Record<string, string> = {};
+  if (includeJson) {
+    headers['Content-Type'] = 'application/json';
+  }
+  const token = getStaffAuthToken();
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+  return headers;
+}
+
 export async function setStudentPortalCredentials(payload: {
   studentId: string;
   username: string;
@@ -169,7 +171,7 @@ export async function setStudentPortalCredentials(payload: {
 }): Promise<void> {
   const res = await fetch('/api/student/set-credentials', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: staffAuthHeaders(true),
     body: JSON.stringify(payload),
   });
   const data = await res.json();
@@ -197,7 +199,13 @@ export interface PendingStudentUpdates {
 }
 
 export async function fetchPendingStudentUpdates(): Promise<PendingStudentUpdates> {
-  const res = await fetch('/api/student/pending-updates');
+  const token = getStaffAuthToken();
+  if (!token) {
+    return { pendingRegistrations: [], pendingProfileUpdates: [], pendingAssessments: [] };
+  }
+  const res = await fetch('/api/student/pending-updates', {
+    headers: staffAuthHeaders(false),
+  });
   if (!res.ok) {
     return { pendingRegistrations: [], pendingProfileUpdates: [], pendingAssessments: [] };
   }
@@ -209,9 +217,10 @@ export async function ackPendingStudentUpdates(payload: {
   processedProfileUpdateIds: string[];
   processedAssessmentIds: string[];
 }): Promise<void> {
+  if (!getStaffAuthToken()) return;
   await fetch('/api/student/ack-pending', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: staffAuthHeaders(true),
     body: JSON.stringify(payload),
   });
 }
@@ -224,9 +233,10 @@ export async function syncStaffSnapshotToStudentPortal(payload: {
   processes: CoachingProcess[];
   statements: GoodStatement[];
 }): Promise<void> {
+  if (!getStaffAuthToken()) return;
   await fetch('/api/student/sync-from-staff', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: staffAuthHeaders(true),
     body: JSON.stringify(payload),
   });
 }

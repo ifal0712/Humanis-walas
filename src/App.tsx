@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { onAuthStateChanged, signOut, type User } from 'firebase/auth';
 import {
   LayoutGrid,
@@ -26,6 +26,13 @@ import {
   updateUserProfile,
 } from './lib/firestoreService';
 import {
+  exchangeFirebaseTokenForStaffToken,
+  fetchStaffWorkspace,
+  onStaffWorkspaceMutated,
+  setStaffAuthToken,
+  type StaffWorkspaceSnapshot,
+} from './lib/staffPortalService';
+import {
   ackPendingStudentUpdates,
   fetchPendingStudentUpdates,
   fetchStudentPortal,
@@ -43,6 +50,7 @@ import type {
   ReportRecord,
   RoleAssignment,
   StaffRole,
+  StaffSession,
   Student,
   StudentPortalData,
   StudentSession,
@@ -121,6 +129,12 @@ export default function App() {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [pendingMeta, setPendingMeta] = useState<{ nip: string; role: StaffRole } | null>(null);
 
+  // Admin / Staff Credential Session (in-memory only, no localStorage Bearer tokens)
+  const [staffSession, setStaffSession] = useState<StaffSession | null>(null);
+  const staffSessionRef = useRef<StaffSession | null>(null);
+  staffSessionRef.current = staffSession;
+  const [previewRole, setPreviewRole] = useState<StaffRole | null>(null);
+
   // Student Portal Session State (Username & Password login)
   const [studentSession, setStudentSession] = useState<StudentSession | null>(() =>
     getSavedStudentSession()
@@ -134,7 +148,7 @@ export default function App() {
   const [seeding, setSeeding] = useState(false);
   const [emblemFailed, setEmblemFailed] = useState(false);
 
-  // Firestore synced collections
+  // Synced collections (Firestore or Server Staff Workspace)
   const [studentsLoaded, setStudentsLoaded] = useState(false);
   const [students, setStudents] = useState<Student[]>([]);
   const [diagnostics, setDiagnostics] = useState<Diagnostic[]>([]);
@@ -172,12 +186,35 @@ export default function App() {
   const isEmailAdmin =
     Boolean(user?.emailVerified) && user?.email === 'alamifal@smkn1sidayu.sch.id';
 
+  const applyWorkspaceSnapshot = useCallback((snap: StaffWorkspaceSnapshot) => {
+    const sorted = [...snap.students].sort((a, b) => a.namaLengkap.localeCompare(b.namaLengkap));
+    setStudents(sorted);
+    setStudentsLoaded(true);
+    setSelectedStudentId((prev) =>
+      prev && sorted.some((s) => s.id === prev) ? prev : sorted[0]?.id || ''
+    );
+    setDiagnostics(snap.diagnostics);
+    setHumanisList(snap.humanisList);
+    setObservations(snap.observations);
+    setProcesses(snap.processes);
+    setStatements(snap.goodStatements);
+    setReports(snap.reports);
+    setRoleAssignments(snap.roleAssignments);
+    if (snap.theme) {
+      setTheme((prev) => ({ ...prev, ...snap.theme }));
+    }
+  }, []);
+
   // Firebase Auth listener
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
       setUser(firebaseUser);
       if (firebaseUser) {
         setActiveMenu('home'); // Always start on the Grid Menu right after login
+        firebaseUser
+          .getIdToken()
+          .then((idToken) => exchangeFirebaseTokenForStaffToken(idToken, pendingMeta?.role))
+          .catch(() => null);
         try {
           const prof = await getOrCreateUserProfile({
             uid: firebaseUser.uid,
@@ -210,23 +247,25 @@ export default function App() {
         }
       } else {
         setProfile(null);
-        setStudentsLoaded(false);
-        setStudents([]);
-        setDiagnostics([]);
-        setHumanisList([]);
-        setObservations([]);
-        setProcesses([]);
-        setStatements([]);
-        setReports([]);
-        setRoleAssignments([]);
         setUserProfiles([]);
+        if (!staffSessionRef.current) {
+          setStudentsLoaded(false);
+          setStudents([]);
+          setDiagnostics([]);
+          setHumanisList([]);
+          setObservations([]);
+          setProcesses([]);
+          setStatements([]);
+          setReports([]);
+          setRoleAssignments([]);
+        }
       }
       setAuthReady(true);
     });
     return () => unsub();
   }, [pendingMeta]);
 
-  // Firestore real-time subscriptions once authenticated
+  // Firestore real-time subscriptions once authenticated via Google
   useEffect(() => {
     if (!authReady || !user) return;
 
@@ -259,9 +298,35 @@ export default function App() {
     };
   }, [authReady, user, isEmailAdmin]);
 
-  // Hydrate saved Student Portal session if active and no Staff Firebase user
+  // Load & refresh Server Staff Workspace when logged in via Admin/Staff credentials (non-Firebase)
   useEffect(() => {
-    if (!studentSession || studentPortalData || user) return;
+    if (!staffSession || user) {
+      onStaffWorkspaceMutated(null);
+      return;
+    }
+
+    let cancelled = false;
+    const refresh = () => {
+      fetchStaffWorkspace()
+        .then((snap) => {
+          if (!cancelled) applyWorkspaceSnapshot(snap);
+        })
+        .catch((err) => {
+          console.error('Gagal memuat ruang kerja staf:', err);
+        });
+    };
+
+    refresh();
+    onStaffWorkspaceMutated(refresh);
+    return () => {
+      cancelled = true;
+      onStaffWorkspaceMutated(null);
+    };
+  }, [staffSession, user, applyWorkspaceSnapshot]);
+
+  // Hydrate saved Student Portal session if active and no Staff user
+  useEffect(() => {
+    if (!studentSession || studentPortalData || user || staffSession) return;
     let active = true;
     setStudentLoading(true);
     fetchStudentPortal(studentSession.token)
@@ -281,7 +346,7 @@ export default function App() {
     return () => {
       active = false;
     };
-  }, [studentSession, studentPortalData, user]);
+  }, [studentSession, studentPortalData, user, staffSession]);
 
   // Synchronize pending student actions & Firestore snapshot whenever Staff is authenticated
   useEffect(() => {
@@ -376,22 +441,30 @@ export default function App() {
     statements,
   ]);
 
-  const staffRole: StaffRole = profile?.staffRole || 'wali_kelas';
+  const effectiveUid = user?.uid || staffSession?.id || '';
+  const effectiveDisplayName =
+    profile?.displayName || user?.displayName || staffSession?.displayName || 'Pendidik SMK';
+  const effectiveNip = profile?.nip || staffSession?.nip;
+  const baseStaffRole: StaffRole = profile?.staffRole || staffSession?.staffRole || 'wali_kelas';
+  const staffRole: StaffRole = previewRole || baseStaffRole;
+  const isAdminCapable = isEmailAdmin || baseStaffRole === 'admin';
 
   // Effective role for views that accept Wali/BK/Kepsek (Admin has full Wali Kelas write capabilities + full monitoring)
   const effectiveModuleRole = staffRole === 'admin' ? 'wali_kelas' : staffRole;
 
   const handleRoleSwitch = async (nextRole: StaffRole) => {
-    if (!user || !profile) return;
-    if (nextRole === 'admin' && !isEmailAdmin && profile.staffRole !== 'admin') return;
-    setProfile({ ...profile, staffRole: nextRole });
-    await updateUserProfile(user.uid, { staffRole: nextRole });
+    if (nextRole === 'admin' && !isAdminCapable) return;
+    setPreviewRole(nextRole);
+    if (user && profile) {
+      setProfile({ ...profile, staffRole: nextRole });
+      await updateUserProfile(user.uid, { staffRole: nextRole });
+    }
   };
 
   const handlePersistTheme = async (next: ThemeSetting) => {
     setTheme(next);
-    if (user) {
-      await saveThemeSetting(user.uid, {
+    if (effectiveUid) {
+      await saveThemeSetting(effectiveUid, {
         mode: next.mode,
         accentColor: next.accentColor,
         cardRadius: next.cardRadius,
@@ -411,8 +484,8 @@ export default function App() {
       mode: theme.mode === 'dark' ? 'light' : 'dark',
     };
     setTheme(next);
-    if (user) {
-      await saveThemeSetting(user.uid, {
+    if (effectiveUid) {
+      await saveThemeSetting(effectiveUid, {
         mode: next.mode,
         accentColor: next.accentColor,
         cardRadius: next.cardRadius,
@@ -427,16 +500,32 @@ export default function App() {
   };
 
   const handleSeedDemo = async () => {
-    if (!user) return;
+    if (!effectiveUid) return;
     setSeeding(true);
     try {
-      await seedSampleSchoolData(
-        user.uid,
-        profile?.displayName || user.displayName || 'Wali Kelas'
-      );
+      await seedSampleSchoolData(effectiveUid, effectiveDisplayName);
     } finally {
       setSeeding(false);
     }
+  };
+
+  const handleStaffLogout = async () => {
+    if (user) {
+      await signOut(auth);
+    }
+    setStaffSession(null);
+    setPreviewRole(null);
+    setStaffAuthToken(null);
+    setStudentsLoaded(false);
+    setStudents([]);
+    setDiagnostics([]);
+    setHumanisList([]);
+    setObservations([]);
+    setProcesses([]);
+    setStatements([]);
+    setReports([]);
+    setRoleAssignments([]);
+    setUserProfiles([]);
   };
 
   if (!authReady || studentLoading) {
@@ -450,7 +539,7 @@ export default function App() {
     );
   }
 
-  if (!user && studentSession && studentPortalData) {
+  if (!user && !staffSession && studentSession && studentPortalData) {
     return (
       <StudentPortal
         session={studentSession}
@@ -473,7 +562,7 @@ export default function App() {
     );
   }
 
-  if (!user) {
+  if (!user && !staffSession) {
     return (
       <LoginPage
         darkMode={theme.mode === 'dark'}
@@ -481,6 +570,11 @@ export default function App() {
           setTheme((prev) => ({ ...prev, mode: prev.mode === 'dark' ? 'light' : 'dark' }))
         }
         onSavePendingMeta={(meta) => setPendingMeta(meta)}
+        onStaffLoginSuccess={(sess) => {
+          setStaffSession(sess);
+          setPreviewRole(null);
+          setActiveMenu('home');
+        }}
         onStudentLoginSuccess={(sess, portal) => {
           setStudentSession(sess);
           setStudentPortalData(portal);
@@ -504,9 +598,9 @@ export default function App() {
       icon: Compass,
     },
     {
-      id: staffRole === 'admin' ? 'peran' : 'tema',
-      label: staffRole === 'admin' ? 'Operator' : 'Tema',
-      icon: staffRole === 'admin' ? ShieldCheck : Palette,
+      id: isAdminCapable ? 'peran' : 'tema',
+      label: isAdminCapable ? 'Akun' : 'Tema',
+      icon: isAdminCapable ? ShieldCheck : Palette,
     },
   ];
 
@@ -562,7 +656,7 @@ export default function App() {
           </button>
           <button
             type="button"
-            onClick={() => signOut(auth)}
+            onClick={handleStaffLogout}
             aria-label="Keluar"
             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-medium text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer whitespace-nowrap"
           >
@@ -576,9 +670,9 @@ export default function App() {
       <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-[1360px] w-full mx-auto">
         {activeMenu === 'home' && (
           <GridMenuHome
-            staffName={profile?.displayName || user.displayName || 'Pendidik SMK'}
+            staffName={effectiveDisplayName}
             staffRole={staffRole}
-            nip={profile?.nip}
+            nip={effectiveNip}
             theme={theme}
             students={students}
             onSelectMenu={(key) => setActiveMenu(key)}
@@ -606,7 +700,7 @@ export default function App() {
 
         {activeMenu === 'siswa' && (
           <StudentsView
-            ownerId={user.uid}
+            ownerId={effectiveUid}
             students={students}
             staffRole={effectiveModuleRole}
             onSelectForDiagnostic={(id) => {
@@ -618,7 +712,7 @@ export default function App() {
 
         {activeMenu === 'diagnostik' && (
           <DiagnosticView
-            ownerId={user.uid}
+            ownerId={effectiveUid}
             students={students}
             diagnostics={diagnostics}
             selectedStudentId={selectedStudentId}
@@ -629,7 +723,7 @@ export default function App() {
 
         {activeMenu === 'humanis' && (
           <HumanisView
-            ownerId={user.uid}
+            ownerId={effectiveUid}
             students={students}
             humanisList={humanisList}
             selectedStudentId={selectedStudentId}
@@ -640,31 +734,31 @@ export default function App() {
 
         {activeMenu === 'kondisi' && (
           <ObservationsView
-            ownerId={user.uid}
+            ownerId={effectiveUid}
             students={students}
             observations={observations}
             selectedStudentId={selectedStudentId}
             onSelectStudent={setSelectedStudentId}
             staffRole={effectiveModuleRole}
-            observerName={profile?.displayName || user.displayName || 'Wali Kelas'}
+            observerName={effectiveDisplayName}
           />
         )}
 
         {activeMenu === 'pembinaan' && (
           <ProcessesView
-            ownerId={user.uid}
+            ownerId={effectiveUid}
             students={students}
             processes={processes}
             selectedStudentId={selectedStudentId}
             onSelectStudent={setSelectedStudentId}
             staffRole={effectiveModuleRole}
-            staffName={profile?.displayName || user.displayName || 'Wali Kelas'}
+            staffName={effectiveDisplayName}
           />
         )}
 
         {activeMenu === 'pernyataan' && (
           <GoodStatementsView
-            ownerId={user.uid}
+            ownerId={effectiveUid}
             students={students}
             statements={statements}
             selectedStudentId={selectedStudentId}
@@ -675,7 +769,7 @@ export default function App() {
 
         {activeMenu === 'ai' && (
           <AIAdvisorView
-            ownerId={user.uid}
+            ownerId={effectiveUid}
             students={students}
             diagnostics={diagnostics}
             humanisList={humanisList}
@@ -685,7 +779,7 @@ export default function App() {
             reports={reports}
             selectedStudentId={selectedStudentId}
             onSelectStudent={setSelectedStudentId}
-            staffName={profile?.displayName || user.displayName || 'Wali Kelas'}
+            staffName={effectiveDisplayName}
           />
         )}
 
@@ -705,9 +799,9 @@ export default function App() {
 
         {activeMenu === 'peran' && (
           <RoleManagementView
-            ownerId={user.uid}
+            ownerId={effectiveUid}
             currentRole={staffRole}
-            isAdminEmail={isEmailAdmin}
+            isAdminEmail={isAdminCapable}
             roleAssignments={roleAssignments}
             userProfiles={userProfiles}
             onSwitchPreviewRole={handleRoleSwitch}

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { signInWithPopup, signInWithEmailAndPassword } from 'firebase/auth';
+import { signInWithPopup } from 'firebase/auth';
 import { auth, googleProvider } from '../lib/firebase';
 import {
   Lock,
@@ -18,13 +18,15 @@ import {
   UserPlus,
   X,
 } from 'lucide-react';
-import type { StaffRole, StudentPortalData, StudentSession } from '../types/humanis';
+import type { StaffRole, StaffSession, StudentPortalData, StudentSession } from '../types/humanis';
+import { loginStaffCredentials } from '../lib/staffPortalService';
 import { loginStudentAccount, registerStudentAccount } from '../lib/studentPortalService';
 
 interface LoginPageProps {
   darkMode: boolean;
   onToggleDark: () => void;
   onSavePendingMeta: (meta: { nip: string; role: StaffRole }) => void;
+  onStaffLoginSuccess: (session: StaffSession) => void;
   onStudentLoginSuccess: (session: StudentSession, portal: StudentPortalData) => void;
 }
 
@@ -32,6 +34,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
   darkMode,
   onToggleDark,
   onSavePendingMeta,
+  onStaffLoginSuccess,
   onStudentLoginSuccess,
 }) => {
   const [loginMode, setLoginMode] = useState<'staff' | 'student'>('staff');
@@ -103,17 +106,19 @@ export const LoginPage: React.FC<LoginPageProps> = ({
     e.preventDefault();
     setErrorMsg(null);
     if (!nip.trim() || !password) {
-      setErrorMsg('Masukkan NIP/NUPTK/ID Operator dan kata sandi terlebih dahulu.');
+      setErrorMsg('Masukkan Username / NIP dan password akun terlebih dahulu.');
       return;
     }
     setLoading(true);
     persistLoginPreferences();
-    const emailIdentifier = nip.includes('@') ? nip.trim() : `${nip.trim()}@smk.sch.id`;
     try {
-      await signInWithEmailAndPassword(auth, emailIdentifier, password);
-    } catch {
+      const session = await loginStaffCredentials(nip.trim(), password);
+      onStaffLoginSuccess(session);
+    } catch (err) {
       setErrorMsg(
-        'Autentikasi guru/operator aktif menggunakan Akun Google Sekolah. Klik "Login dengan Google" untuk masuk langsung.'
+        err instanceof Error
+          ? err.message
+          : 'Gagal masuk. Periksa kembali Username / NIP dan password Anda.'
       );
     } finally {
       setLoading(false);
@@ -292,14 +297,103 @@ export const LoginPage: React.FC<LoginPageProps> = ({
                     Masuk Portal Sekolah
                   </h2>
                   <p className="text-sm text-slate-600 dark:text-slate-400">
-                    Pilih peran akses termasuk Admin / Operator sekolah.
+                    Gunakan akun Admin / Operator atau akun Staf yang terdaftar untuk mengelola sistem.
                   </p>
                 </div>
 
-                <div className="space-y-1.5">
-                  <label className="block text-xs font-medium text-slate-700 dark:text-slate-300">
-                    Peran Akses
-                  </label>
+                <form onSubmit={handleCredentialSubmit} className="space-y-3.5">
+                  <div className="space-y-1">
+                    <label
+                      htmlFor="nip-input"
+                      className="block text-xs font-medium text-slate-700 dark:text-slate-300"
+                    >
+                      Username / NIP / Email Staf
+                    </label>
+                    <div className="relative">
+                      <UserCheck className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                      <input
+                        id="nip-input"
+                        type="text"
+                        autoComplete="username"
+                        value={nip}
+                        onChange={(e) => setNip(e.target.value)}
+                        placeholder="Contoh: admin atau NIP guru"
+                        className="w-full pl-10 pr-3.5 py-2.5 text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-600 font-mono"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label
+                      htmlFor="password-input"
+                      className="block text-xs font-medium text-slate-700 dark:text-slate-300"
+                    >
+                      Password
+                    </label>
+                    <div className="relative">
+                      <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                      <input
+                        id="password-input"
+                        type={showPass ? 'text' : 'password'}
+                        autoComplete="current-password"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        placeholder="Masukkan password akun"
+                        className="w-full pl-10 pr-10 py-2.5 text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-600"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPass(!showPass)}
+                        aria-label="Tampilkan atau sembunyikan password"
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+                      >
+                        {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between text-xs">
+                    <label className="inline-flex items-center gap-2 cursor-pointer text-slate-600 dark:text-slate-400">
+                      <input
+                        type="checkbox"
+                        checked={rememberMe}
+                        onChange={(e) => setRememberMe(e.target.checked)}
+                        className="rounded border-slate-300 text-blue-600 focus:ring-blue-600"
+                      />
+                      <span>Ingat Username</span>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setForgotSent(false);
+                        setShowForgotModal(true);
+                      }}
+                      className="inline-flex items-center gap-1 brand-text hover:underline font-medium cursor-pointer"
+                    >
+                      <HelpCircle className="w-3.5 h-3.5" />
+                      <span>Lupa Password?</span>
+                    </button>
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl brand-bg hover:opacity-95 disabled:opacity-60 text-white text-sm font-medium transition-opacity cursor-pointer"
+                  >
+                    <span>{loading ? 'Memverifikasi...' : 'Masuk sebagai Admin / Staf'}</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </button>
+                </form>
+
+                <div className="relative flex items-center py-0.5">
+                  <div className="flex-grow border-t border-slate-200 dark:border-slate-800" />
+                  <span className="shrink mx-3 text-xs text-slate-400 dark:text-slate-500">
+                    atau gunakan Akun Google Sekolah
+                  </span>
+                  <div className="flex-grow border-t border-slate-200 dark:border-slate-800" />
+                </div>
+
+                <div className="space-y-2.5">
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-1 p-1 bg-slate-100 dark:bg-slate-800 rounded-lg">
                     {(
                       [
@@ -327,143 +421,38 @@ export const LoginPage: React.FC<LoginPageProps> = ({
                     <div className="flex items-start gap-2 p-2.5 rounded-lg bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 text-xs text-blue-800 dark:text-blue-200">
                       <ShieldCheck className="w-4 h-4 shrink-0 mt-0.5" />
                       <span>
-                        Mode <strong>Admin / Operator</strong> membuka akses penuh Manajemen Peran,
-                        Kostumisasi Tema, dan monitoring lintas seluruh kelas.
+                        Login Google Operator memverifikasi email admin terdaftar di sekolah.
                       </span>
                     </div>
                   )}
-                </div>
-
-                <button
-                  type="button"
-                  disabled={loading}
-                  onClick={handleGoogleLogin}
-                  className="w-full flex items-center justify-center gap-3 px-4 py-3 rounded-xl brand-bg hover:opacity-95 disabled:opacity-60 text-white font-medium text-sm transition-opacity cursor-pointer"
-                >
-                  <svg className="w-5 h-5 shrink-0 bg-white rounded-full p-0.5" viewBox="0 0 24 24">
-                    <path
-                      fill="#EA4335"
-                      d="M12 5c1.6 0 3 .6 4.1 1.6l3.1-3.1C17.3 1.7 14.8 1 12 1 7.4 1 3.5 3.6 1.6 7.4l3.7 2.9C6.2 7.2 8.9 5 12 5z"
-                    />
-                    <path
-                      fill="#4285F4"
-                      d="M23.5 12.3c0-.8-.1-1.6-.2-2.3H12v4.5h6.5c-.3 1.5-1.1 2.8-2.4 3.6l3.7 2.9c2.2-2 3.7-5 3.7-8.7z"
-                    />
-                    <path
-                      fill="#FBBC05"
-                      d="M5.3 14.7c-.2-.8-.4-1.7-.4-2.7s.1-1.9.4-2.7L1.6 6.4C.6 8.1 0 10 0 12s.6 3.9 1.6 5.6l3.7-2.9z"
-                    />
-                    <path
-                      fill="#34A853"
-                      d="M12 23c3.2 0 6-1.1 8-3l-3.7-2.9c-1.1.7-2.5 1.2-4.3 1.2-3.1 0-5.8-2.1-6.7-5l-3.7 2.9C3.5 20.4 7.4 23 12 23z"
-                    />
-                  </svg>
-                  <span>
-                    {loading
-                      ? 'Memproses Masuk...'
-                      : selectedRole === 'admin'
-                        ? 'Login Admin Operator (Google)'
-                        : 'Login dengan Google'}
-                  </span>
-                </button>
-
-                <div className="relative flex items-center py-0.5">
-                  <div className="flex-grow border-t border-slate-200 dark:border-slate-800" />
-                  <span className="shrink mx-3 text-xs text-slate-400 dark:text-slate-500">
-                    atau kredensial NIP / ID Operator
-                  </span>
-                  <div className="flex-grow border-t border-slate-200 dark:border-slate-800" />
-                </div>
-
-                <form onSubmit={handleCredentialSubmit} className="space-y-3.5">
-                  <div className="space-y-1">
-                    <label
-                      htmlFor="nip-input"
-                      className="block text-xs font-medium text-slate-700 dark:text-slate-300"
-                    >
-                      {selectedRole === 'admin' ? 'ID Operator / Email Admin' : 'NIP / NUPTK'}
-                    </label>
-                    <div className="relative">
-                      <UserCheck className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                      <input
-                        id="nip-input"
-                        type="text"
-                        value={nip}
-                        onChange={(e) => setNip(e.target.value)}
-                        placeholder={
-                          selectedRole === 'admin'
-                            ? 'Contoh: operator@smk.sch.id'
-                            : 'Contoh: 198704122015031002'
-                        }
-                        className="w-full pl-10 pr-3.5 py-2.5 text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-600 font-mono"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="space-y-1">
-                    <label
-                      htmlFor="password-input"
-                      className="block text-xs font-medium text-slate-700 dark:text-slate-300"
-                    >
-                      Password
-                    </label>
-                    <div className="relative">
-                      <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                      <input
-                        id="password-input"
-                        type={showPass ? 'text' : 'password'}
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        placeholder="Masukkan password akun"
-                        className="w-full pl-10 pr-10 py-2.5 text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-600"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowPass(!showPass)}
-                        aria-label="Tampilkan atau sembunyikan password"
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
-                      >
-                        {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center justify-between text-xs">
-                    <label className="inline-flex items-center gap-2 cursor-pointer text-slate-600 dark:text-slate-400">
-                      <input
-                        type="checkbox"
-                        checked={rememberMe}
-                        onChange={(e) => setRememberMe(e.target.checked)}
-                        className="rounded border-slate-300 text-blue-600 focus:ring-blue-600"
-                      />
-                      <span>Ingat Saya</span>
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setForgotSent(false);
-                        setShowForgotModal(true);
-                      }}
-                      className="inline-flex items-center gap-1 brand-text hover:underline font-medium"
-                    >
-                      <HelpCircle className="w-3.5 h-3.5" />
-                      <span>Lupa Password?</span>
-                    </button>
-                  </div>
 
                   <button
-                    type="submit"
+                    type="button"
                     disabled={loading}
-                    className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-900 dark:bg-slate-800 hover:bg-slate-800 dark:hover:bg-slate-700 text-white text-sm font-medium transition-colors cursor-pointer"
+                    onClick={handleGoogleLogin}
+                    className="w-full flex items-center justify-center gap-3 px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-60 text-slate-800 dark:text-slate-100 font-medium text-sm transition-colors cursor-pointer"
                   >
-                    <span>
-                      {selectedRole === 'admin'
-                        ? 'Masuk sebagai Operator'
-                        : 'Masuk dengan NIP / NUPTK'}
-                    </span>
-                    <ArrowRight className="w-4 h-4" />
+                    <svg className="w-5 h-5 shrink-0 bg-white rounded-full p-0.5" viewBox="0 0 24 24">
+                      <path
+                        fill="#EA4335"
+                        d="M12 5c1.6 0 3 .6 4.1 1.6l3.1-3.1C17.3 1.7 14.8 1 12 1 7.4 1 3.5 3.6 1.6 7.4l3.7 2.9C6.2 7.2 8.9 5 12 5z"
+                      />
+                      <path
+                        fill="#4285F4"
+                        d="M23.5 12.3c0-.8-.1-1.6-.2-2.3H12v4.5h6.5c-.3 1.5-1.1 2.8-2.4 3.6l3.7 2.9c2.2-2 3.7-5 3.7-8.7z"
+                      />
+                      <path
+                        fill="#FBBC05"
+                        d="M5.3 14.7c-.2-.8-.4-1.7-.4-2.7s.1-1.9.4-2.7L1.6 6.4C.6 8.1 0 10 0 12s.6 3.9 1.6 5.6l3.7-2.9z"
+                      />
+                      <path
+                        fill="#34A853"
+                        d="M12 23c3.2 0 6-1.1 8-3l-3.7-2.9c-1.1.7-2.5 1.2-4.3 1.2-3.1 0-5.8-2.1-6.7-5l-3.7 2.9C3.5 20.4 7.4 23 12 23z"
+                      />
+                    </svg>
+                    <span>Login dengan Google</span>
                   </button>
-                </form>
+                </div>
               </>
             ) : studentMode === 'login' ? (
               <>

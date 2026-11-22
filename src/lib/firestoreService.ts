@@ -12,7 +12,8 @@ import {
   serverTimestamp,
   type Unsubscribe,
 } from 'firebase/firestore';
-import { db, handleFirestoreError, OperationType } from './firebase';
+import { auth, db, handleFirestoreError, OperationType } from './firebase';
+import { getStaffAuthToken, mutateStaffWorkspace } from './staffPortalService';
 import type {
   UserProfile,
   RoleAssignment,
@@ -29,6 +30,9 @@ import type {
 
 const clip = (val: string | undefined, max: number): string =>
   (val ?? '').trim().slice(0, max);
+
+const shouldUseServerWorkspace = (): boolean =>
+  !auth.currentUser && Boolean(getStaffAuthToken());
 
 // 1. User Profile Operations
 export async function getOrCreateUserProfile(params: {
@@ -78,6 +82,10 @@ export async function updateUserProfile(
   uid: string,
   updates: Partial<Pick<UserProfile, 'displayName' | 'nip' | 'staffRole' | 'kelasBinaan' | 'jurusan' | 'schoolName'>>
 ): Promise<void> {
+  if (shouldUseServerWorkspace()) {
+    await mutateStaffWorkspace('updateUserProfile', updates as Record<string, unknown>, uid);
+    return;
+  }
   const userPath = `users/${uid}`;
   try {
     const payload: Record<string, unknown> = {
@@ -101,6 +109,18 @@ export async function createRoleAssignment(
   ownerId: string,
   input: Omit<RoleAssignment, 'id' | 'ownerId' | 'createdAt' | 'updatedAt'>
 ): Promise<string> {
+  if (shouldUseServerWorkspace()) {
+    const res = await mutateStaffWorkspace('createRoleAssignment', {
+      nama: clip(input.nama, 120),
+      nip: clip(input.nip, 40),
+      email: clip(input.email, 180),
+      role: input.role,
+      kelasBinaan: clip(input.kelasBinaan, 40),
+      aktif: Boolean(input.aktif),
+      permissions: input.permissions.slice(0, 12).map((p) => clip(p, 80)),
+    });
+    return res.id || `ra_${Date.now()}`;
+  }
   const path = 'roleAssignments';
   try {
     const docRef = await addDoc(collection(db, path), {
@@ -125,6 +145,14 @@ export async function updateRoleAssignment(
   assignmentId: string,
   updates: Partial<Omit<RoleAssignment, 'id' | 'ownerId' | 'createdAt' | 'updatedAt'>>
 ): Promise<void> {
+  if (shouldUseServerWorkspace()) {
+    await mutateStaffWorkspace(
+      'updateRoleAssignment',
+      updates as Record<string, unknown>,
+      assignmentId
+    );
+    return;
+  }
   const path = `roleAssignments/${assignmentId}`;
   try {
     const payload: Record<string, unknown> = {
@@ -147,6 +175,10 @@ export async function updateRoleAssignment(
 }
 
 export async function deleteRoleAssignment(assignmentId: string): Promise<void> {
+  if (shouldUseServerWorkspace()) {
+    await mutateStaffWorkspace('deleteRoleAssignment', undefined, assignmentId);
+    return;
+  }
   const path = `roleAssignments/${assignmentId}`;
   try {
     await deleteDoc(doc(db, 'roleAssignments', assignmentId));
@@ -160,9 +192,26 @@ export async function saveThemeSetting(
   userId: string,
   setting: Omit<ThemeSetting, 'userId' | 'updatedAt'>
 ): Promise<void> {
-  const path = `themeSettings/${userId}`;
   const gridColumns = Math.min(6, Math.max(2, Math.round(Number(setting.gridColumns ?? 4))));
   const gridRows = Math.min(6, Math.max(2, Math.round(Number(setting.gridRows ?? 3))));
+  if (shouldUseServerWorkspace()) {
+    await mutateStaffWorkspace('saveTheme', {
+      mode: setting.mode,
+      accentColor: clip(setting.accentColor, 20),
+      cardRadius: setting.cardRadius,
+      density: setting.density,
+      schoolName: clip(setting.schoolName || 'SMK Negeri 1 Sidayu', 120),
+      academicYear: clip(setting.academicYear || '2026/2027', 30),
+      programSubtitle: clip(
+        setting.programSubtitle || 'Implementasi Tahap HUMANIS Kemandirian Siswa SMK',
+        160
+      ),
+      gridColumns,
+      gridRows,
+    });
+    return;
+  }
+  const path = `themeSettings/${userId}`;
   try {
     await setDoc(doc(db, 'themeSettings', userId), {
       userId,
@@ -239,23 +288,30 @@ export async function createStudent(
   ownerId: string,
   input: Omit<Student, 'id' | 'ownerId' | 'createdAt' | 'updatedAt'>
 ): Promise<string> {
+  const sanitized = {
+    nisn: clip(input.nisn, 20),
+    namaLengkap: clip(input.namaLengkap, 120),
+    jenisKelamin: input.jenisKelamin,
+    jurusan: clip(input.jurusan, 80),
+    kelas: clip(input.kelas, 40),
+    noHp: clip(input.noHp, 30),
+    namaOrangTua: clip(input.namaOrangTua, 120),
+    nomorOrangTua: clip(input.nomorOrangTua, 30),
+    alamat: clip(input.alamat, 300),
+    portalUsername: clip(input.portalUsername || input.nisn, 60).toLowerCase(),
+    latestScore: typeof input.latestScore === 'number' ? Math.min(100, Math.max(0, input.latestScore)) : 0,
+    latestCategory: clip(input.latestCategory || 'Sedang', 40),
+    latestCondition: input.latestCondition || 'cukup',
+  };
+  if (shouldUseServerWorkspace()) {
+    const res = await mutateStaffWorkspace('createStudent', sanitized);
+    return res.id || `stu_${Date.now()}`;
+  }
   const path = 'students';
   try {
     const docRef = await addDoc(collection(db, path), {
       ownerId,
-      nisn: clip(input.nisn, 20),
-      namaLengkap: clip(input.namaLengkap, 120),
-      jenisKelamin: input.jenisKelamin,
-      jurusan: clip(input.jurusan, 80),
-      kelas: clip(input.kelas, 40),
-      noHp: clip(input.noHp, 30),
-      namaOrangTua: clip(input.namaOrangTua, 120),
-      nomorOrangTua: clip(input.nomorOrangTua, 30),
-      alamat: clip(input.alamat, 300),
-      portalUsername: clip(input.portalUsername || input.nisn, 60).toLowerCase(),
-      latestScore: typeof input.latestScore === 'number' ? Math.min(100, Math.max(0, input.latestScore)) : 0,
-      latestCategory: clip(input.latestCategory || 'Sedang', 40),
-      latestCondition: input.latestCondition || 'cukup',
+      ...sanitized,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     });
@@ -269,6 +325,23 @@ export async function updateStudent(
   studentId: string,
   input: Partial<Omit<Student, 'id' | 'ownerId' | 'createdAt' | 'updatedAt'>>
 ): Promise<void> {
+  if (shouldUseServerWorkspace()) {
+    const cleanPayload: Record<string, unknown> = {};
+    if (input.nisn !== undefined) cleanPayload.nisn = clip(input.nisn, 20);
+    if (input.namaLengkap !== undefined) cleanPayload.namaLengkap = clip(input.namaLengkap, 120);
+    if (input.jenisKelamin !== undefined) cleanPayload.jenisKelamin = input.jenisKelamin;
+    if (input.jurusan !== undefined) cleanPayload.jurusan = clip(input.jurusan, 80);
+    if (input.kelas !== undefined) cleanPayload.kelas = clip(input.kelas, 40);
+    if (input.noHp !== undefined) cleanPayload.noHp = clip(input.noHp, 30);
+    if (input.namaOrangTua !== undefined) cleanPayload.namaOrangTua = clip(input.namaOrangTua, 120);
+    if (input.nomorOrangTua !== undefined) cleanPayload.nomorOrangTua = clip(input.nomorOrangTua, 30);
+    if (input.alamat !== undefined) cleanPayload.alamat = clip(input.alamat, 300);
+    if (input.portalUsername !== undefined) {
+      cleanPayload.portalUsername = clip(input.portalUsername, 60).toLowerCase();
+    }
+    await mutateStaffWorkspace('updateStudent', cleanPayload, studentId);
+    return;
+  }
   const path = `students/${studentId}`;
   try {
     const payload: Record<string, unknown> = {
@@ -292,6 +365,10 @@ export async function updateStudent(
 }
 
 export async function deleteStudent(studentId: string): Promise<void> {
+  if (shouldUseServerWorkspace()) {
+    await mutateStaffWorkspace('deleteStudent', undefined, studentId);
+    return;
+  }
   const path = `students/${studentId}`;
   try {
     await deleteDoc(doc(db, 'students', studentId));
@@ -305,22 +382,29 @@ export async function saveDiagnostic(
   ownerId: string,
   input: Omit<Diagnostic, 'id' | 'ownerId' | 'createdAt'>
 ): Promise<string> {
+  const cleanPayload = {
+    studentId: input.studentId,
+    studentName: clip(input.studentName, 120),
+    kelas: clip(input.kelas, 40),
+    tanggungJawab: Number(input.tanggungJawab),
+    disiplin: Number(input.disiplin),
+    inisiatif: Number(input.inisiatif),
+    pengambilanKeputusan: Number(input.pengambilanKeputusan),
+    manajemenDiri: Number(input.manajemenDiri),
+    totalScore: Number(input.totalScore),
+    category: input.category,
+    assessedDate: clip(input.assessedDate, 30),
+    notes: clip(input.notes, 500),
+  };
+  if (shouldUseServerWorkspace()) {
+    const res = await mutateStaffWorkspace('saveDiagnostic', cleanPayload);
+    return res.id || `diag_${Date.now()}`;
+  }
   const path = 'diagnostics';
   try {
     const docRef = await addDoc(collection(db, path), {
       ownerId,
-      studentId: input.studentId,
-      studentName: clip(input.studentName, 120),
-      kelas: clip(input.kelas, 40),
-      tanggungJawab: Number(input.tanggungJawab),
-      disiplin: Number(input.disiplin),
-      inisiatif: Number(input.inisiatif),
-      pengambilanKeputusan: Number(input.pengambilanKeputusan),
-      manajemenDiri: Number(input.manajemenDiri),
-      totalScore: Number(input.totalScore),
-      category: input.category,
-      assessedDate: clip(input.assessedDate, 30),
-      notes: clip(input.notes, 500),
+      ...cleanPayload,
       createdAt: serverTimestamp(),
     });
 
@@ -344,34 +428,41 @@ export async function saveHumanisProgress(
   existingDocId?: string
 ): Promise<void> {
   const docId = existingDocId || `hum_${studentId}`;
+  const sanitizedFields = {
+    studentName: clip(input.studentName, 120),
+    kelas: clip(input.kelas, 40),
+    completedStages: input.completedStages.slice(0, 7),
+    hMinat: clip(input.hMinat, 400),
+    hBakat: clip(input.hBakat, 400),
+    hCitaCita: clip(input.hCitaCita, 400),
+    hKeunggulan: clip(input.hKeunggulan, 400),
+    uPemahamanKerja: clip(input.uPemahamanKerja, 400),
+    uKesadaranMandiri: clip(input.uKesadaranMandiri, 400),
+    uCatatanDiskusi: clip(input.uCatatanDiskusi, 500),
+    mKeteladananGuru: clip(input.mKeteladananGuru, 400),
+    mResponSiswa: clip(input.mResponSiswa, 400),
+    aProgresDicapai: clip(input.aProgresDicapai, 400),
+    aBentukApresiasi: clip(input.aBentukApresiasi, 400),
+    aTanggal: clip(input.aTanggal, 30),
+    nKebiasaanPositif: clip(input.nKebiasaanPositif, 400),
+    nTugasKemandirian: clip(input.nTugasKemandirian, 400),
+    iNilaiTertanam: clip(input.iNilaiTertanam, 400),
+    iRefleksiSiswa: clip(input.iRefleksiSiswa, 500),
+    sPeranOrangTua: clip(input.sPeranOrangTua, 400),
+    sPeranGuru: clip(input.sPeranGuru, 400),
+    sTindakLanjut: clip(input.sTindakLanjut, 500),
+  };
+  if (shouldUseServerWorkspace()) {
+    await mutateStaffWorkspace('saveHumanis', { studentId, ...sanitizedFields }, docId);
+    return;
+  }
   const path = `humanis/${docId}`;
   try {
     const ref = doc(db, 'humanis', docId);
     const snap = await getDoc(ref);
 
     const sanitizedPayload = {
-      studentName: clip(input.studentName, 120),
-      kelas: clip(input.kelas, 40),
-      completedStages: input.completedStages.slice(0, 7),
-      hMinat: clip(input.hMinat, 400),
-      hBakat: clip(input.hBakat, 400),
-      hCitaCita: clip(input.hCitaCita, 400),
-      hKeunggulan: clip(input.hKeunggulan, 400),
-      uPemahamanKerja: clip(input.uPemahamanKerja, 400),
-      uKesadaranMandiri: clip(input.uKesadaranMandiri, 400),
-      uCatatanDiskusi: clip(input.uCatatanDiskusi, 500),
-      mKeteladananGuru: clip(input.mKeteladananGuru, 400),
-      mResponSiswa: clip(input.mResponSiswa, 400),
-      aProgresDicapai: clip(input.aProgresDicapai, 400),
-      aBentukApresiasi: clip(input.aBentukApresiasi, 400),
-      aTanggal: clip(input.aTanggal, 30),
-      nKebiasaanPositif: clip(input.nKebiasaanPositif, 400),
-      nTugasKemandirian: clip(input.nTugasKemandirian, 400),
-      iNilaiTertanam: clip(input.iNilaiTertanam, 400),
-      iRefleksiSiswa: clip(input.iRefleksiSiswa, 500),
-      sPeranOrangTua: clip(input.sPeranOrangTua, 400),
-      sPeranGuru: clip(input.sPeranGuru, 400),
-      sTindakLanjut: clip(input.sTindakLanjut, 500),
+      ...sanitizedFields,
       updatedAt: serverTimestamp(),
     };
 
@@ -395,20 +486,27 @@ export async function saveObservation(
   ownerId: string,
   input: Omit<Observation, 'id' | 'ownerId' | 'createdAt'>
 ): Promise<string> {
+  const cleanPayload = {
+    studentId: input.studentId,
+    studentName: clip(input.studentName, 120),
+    kelas: clip(input.kelas, 40),
+    tanggal: clip(input.tanggal, 30),
+    kondisiAkademik: clip(input.kondisiAkademik, 400),
+    kondisiSosial: clip(input.kondisiSosial, 400),
+    kondisiEmosional: clip(input.kondisiEmosional, 400),
+    tingkatKemandirian: input.tingkatKemandirian,
+    skorKemandirian: Number(input.skorKemandirian),
+    observerName: clip(input.observerName, 120),
+  };
+  if (shouldUseServerWorkspace()) {
+    const res = await mutateStaffWorkspace('saveObservation', cleanPayload);
+    return res.id || `obs_${Date.now()}`;
+  }
   const path = 'observations';
   try {
     const docRef = await addDoc(collection(db, path), {
       ownerId,
-      studentId: input.studentId,
-      studentName: clip(input.studentName, 120),
-      kelas: clip(input.kelas, 40),
-      tanggal: clip(input.tanggal, 30),
-      kondisiAkademik: clip(input.kondisiAkademik, 400),
-      kondisiSosial: clip(input.kondisiSosial, 400),
-      kondisiEmosional: clip(input.kondisiEmosional, 400),
-      tingkatKemandirian: input.tingkatKemandirian,
-      skorKemandirian: Number(input.skorKemandirian),
-      observerName: clip(input.observerName, 120),
+      ...cleanPayload,
       createdAt: serverTimestamp(),
     });
 
@@ -428,19 +526,26 @@ export async function saveProcess(
   ownerId: string,
   input: Omit<CoachingProcess, 'id' | 'ownerId' | 'createdAt'>
 ): Promise<string> {
+  const cleanPayload = {
+    studentId: input.studentId,
+    studentName: clip(input.studentName, 120),
+    kelas: clip(input.kelas, 40),
+    tanggal: clip(input.tanggal, 30),
+    tindakan: clip(input.tindakan, 500),
+    tahapHumanis: input.tahapHumanis,
+    hasilSementara: clip(input.hasilSementara, 500),
+    petugasRole: input.petugasRole,
+    petugasNama: clip(input.petugasNama, 120),
+  };
+  if (shouldUseServerWorkspace()) {
+    const res = await mutateStaffWorkspace('saveProcess', cleanPayload);
+    return res.id || `proc_${Date.now()}`;
+  }
   const path = 'processes';
   try {
     const docRef = await addDoc(collection(db, path), {
       ownerId,
-      studentId: input.studentId,
-      studentName: clip(input.studentName, 120),
-      kelas: clip(input.kelas, 40),
-      tanggal: clip(input.tanggal, 30),
-      tindakan: clip(input.tindakan, 500),
-      tahapHumanis: input.tahapHumanis,
-      hasilSementara: clip(input.hasilSementara, 500),
-      petugasRole: input.petugasRole,
-      petugasNama: clip(input.petugasNama, 120),
+      ...cleanPayload,
       createdAt: serverTimestamp(),
     });
     return docRef.id;
@@ -450,6 +555,10 @@ export async function saveProcess(
 }
 
 export async function deleteProcess(processId: string): Promise<void> {
+  if (shouldUseServerWorkspace()) {
+    await mutateStaffWorkspace('deleteProcess', undefined, processId);
+    return;
+  }
   const path = `processes/${processId}`;
   try {
     await deleteDoc(doc(db, 'processes', processId));
@@ -463,16 +572,23 @@ export async function saveGoodStatement(
   ownerId: string,
   input: Omit<GoodStatement, 'id' | 'ownerId' | 'createdAt'>
 ): Promise<string> {
+  const cleanPayload = {
+    studentId: input.studentId,
+    studentName: clip(input.studentName, 120),
+    kelas: clip(input.kelas, 40),
+    kalimat: clip(input.kalimat, 400),
+    sumber: input.sumber,
+    tanggal: clip(input.tanggal, 30),
+  };
+  if (shouldUseServerWorkspace()) {
+    const res = await mutateStaffWorkspace('saveGoodStatement', cleanPayload);
+    return res.id || `stmt_${Date.now()}`;
+  }
   const path = 'goodStatements';
   try {
     const docRef = await addDoc(collection(db, path), {
       ownerId,
-      studentId: input.studentId,
-      studentName: clip(input.studentName, 120),
-      kelas: clip(input.kelas, 40),
-      kalimat: clip(input.kalimat, 400),
-      sumber: input.sumber,
-      tanggal: clip(input.tanggal, 30),
+      ...cleanPayload,
       createdAt: serverTimestamp(),
     });
     return docRef.id;
@@ -482,6 +598,10 @@ export async function saveGoodStatement(
 }
 
 export async function deleteGoodStatement(statementId: string): Promise<void> {
+  if (shouldUseServerWorkspace()) {
+    await mutateStaffWorkspace('deleteGoodStatement', undefined, statementId);
+    return;
+  }
   const path = `goodStatements/${statementId}`;
   try {
     await deleteDoc(doc(db, 'goodStatements', statementId));
@@ -495,19 +615,26 @@ export async function saveReportRecord(
   ownerId: string,
   input: Omit<ReportRecord, 'id' | 'ownerId' | 'createdAt'>
 ): Promise<string> {
+  const cleanPayload = {
+    reportType: input.reportType,
+    studentId: clip(input.studentId, 128),
+    studentName: clip(input.studentName, 120),
+    kelas: clip(input.kelas, 40),
+    title: clip(input.title, 160),
+    analisisSiswa: clip(input.analisisSiswa, 1500),
+    saranTindakan: input.saranTindakan.slice(0, 10).map((s) => clip(s, 300)),
+    prediksiPerkembangan: input.prediksiPerkembangan,
+    generatedBy: clip(input.generatedBy, 120),
+  };
+  if (shouldUseServerWorkspace()) {
+    const res = await mutateStaffWorkspace('saveReport', cleanPayload);
+    return res.id || `rep_${Date.now()}`;
+  }
   const path = 'reports';
   try {
     const docRef = await addDoc(collection(db, path), {
       ownerId,
-      reportType: input.reportType,
-      studentId: clip(input.studentId, 128),
-      studentName: clip(input.studentName, 120),
-      kelas: clip(input.kelas, 40),
-      title: clip(input.title, 160),
-      analisisSiswa: clip(input.analisisSiswa, 1500),
-      saranTindakan: input.saranTindakan.slice(0, 10).map((s) => clip(s, 300)),
-      prediksiPerkembangan: input.prediksiPerkembangan,
-      generatedBy: clip(input.generatedBy, 120),
+      ...cleanPayload,
       createdAt: serverTimestamp(),
     });
     return docRef.id;
