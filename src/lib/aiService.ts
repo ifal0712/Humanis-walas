@@ -8,6 +8,7 @@ import type {
   Observation,
   Student,
 } from '../types/humanis';
+import { apiFetchJson } from './apiClient';
 
 export async function requestStudentAIAnalysis(payload: {
   student: Student;
@@ -17,17 +18,15 @@ export async function requestStudentAIAnalysis(payload: {
   processes: CoachingProcess[];
   goodStatements: GoodStatement[];
 }): Promise<AIStudentAnalysisResult> {
-  const response = await fetch('/api/ai/analyze-student', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  });
-
-  const data = await response.json();
-  if (!response.ok) {
-    throw new Error(data.error || 'Gagal mendapatkan analisis AI siswa.');
-  }
-  return data as AIStudentAnalysisResult;
+  return apiFetchJson<AIStudentAnalysisResult>(
+    '/api/ai/analyze-student',
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    },
+    'Gagal mendapatkan analisis AI siswa.'
+  );
 }
 
 export async function requestClassAIInsight(summary: {
@@ -46,15 +45,13 @@ export async function requestClassAIInsight(summary: {
   avgHumanisStages: number;
   priorityNames: string[];
 }): Promise<AIClassInsightResult> {
-  const response = await fetch('/api/ai/class-insight', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ summary }),
-  });
-
-  const data = await response.json();
-  if (!response.ok) {
-    throw new Error(data.error || 'Gagal menghasilkan AI Insight kelas.');
-  }
-  return data as AIClassInsightResult;
+  return apiFetchJson<AIClassInsightResult>(
+    '/api/ai/class-insight',
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ summary }),
+    },
+    'Gagal menghasilkan AI Insight kelas.'
+  );
 }

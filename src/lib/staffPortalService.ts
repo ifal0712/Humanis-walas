@@ -13,6 +13,7 @@ import type {
   StudentAccountSummary,
   ThemeSetting,
 } from '../types/humanis';
+import { apiFetchJson } from './apiClient';
 
 // Keep non-Firebase Bearer tokens strictly in JS memory (never localStorage/sessionStorage)
 let inMemoryStaffToken: string | null = null;
@@ -42,15 +43,25 @@ export async function loginStaffCredentials(
   username: string,
   password: string
 ): Promise<StaffSession> {
-  const res = await fetch('/api/staff/login', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, password }),
-  });
-  const data = await res.json();
-  if (!res.ok) {
-    throw new Error(data.error || 'Gagal masuk sebagai Admin / Staf.');
-  }
+  const data = await apiFetchJson<{
+    token: string;
+    user: {
+      id: string;
+      username: string;
+      displayName: string;
+      email: string;
+      nip?: string;
+      staffRole: StaffRole;
+    };
+  }>(
+    '/api/staff/login',
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password }),
+    },
+    'Gagal masuk sebagai Admin / Staf.'
+  );
   inMemoryStaffToken = data.token;
   return {
     token: data.token,
@@ -68,16 +79,18 @@ export async function exchangeFirebaseTokenForStaffToken(
   preferredRole?: StaffRole
 ): Promise<string | null> {
   try {
-    const res = await fetch('/api/staff/firebase-exchange', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ idToken, preferredRole }),
-    });
-    if (!res.ok) return null;
-    const data = await res.json();
+    const data = await apiFetchJson<{ token?: string }>(
+      '/api/staff/firebase-exchange',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idToken, preferredRole }),
+      },
+      'Gagal menukar sesi Google.'
+    );
     if (data.token) {
       inMemoryStaffToken = data.token;
-      return data.token as string;
+      return data.token;
     }
     return null;
   } catch {
@@ -98,14 +111,11 @@ export interface StaffWorkspaceSnapshot {
 }
 
 export async function fetchStaffWorkspace(): Promise<StaffWorkspaceSnapshot> {
-  const res = await fetch('/api/staff/workspace', {
-    headers: authHeaders(),
-  });
-  const data = await res.json();
-  if (!res.ok) {
-    throw new Error(data.error || 'Gagal memuat ruang kerja staf.');
-  }
-  return data as StaffWorkspaceSnapshot;
+  return apiFetchJson<StaffWorkspaceSnapshot>(
+    '/api/staff/workspace',
+    { headers: authHeaders() },
+    'Gagal memuat ruang kerja staf.'
+  );
 }
 
 export async function mutateStaffWorkspace(
@@ -113,19 +123,19 @@ export async function mutateStaffWorkspace(
   payload?: Record<string, unknown>,
   id?: string
 ): Promise<{ id?: string; ok?: boolean }> {
-  const res = await fetch('/api/staff/workspace/mutate', {
-    method: 'POST',
-    headers: authHeaders(),
-    body: JSON.stringify({ action, id, payload }),
-  });
-  const data = await res.json();
-  if (!res.ok) {
-    throw new Error(data.error || 'Gagal menyimpan perubahan ke server.');
-  }
+  const data = await apiFetchJson<{ id?: string; ok?: boolean }>(
+    '/api/staff/workspace/mutate',
+    {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ action, id, payload }),
+    },
+    'Gagal menyimpan perubahan ke server.'
+  );
   if (workspaceChangedListener) {
     workspaceChangedListener();
   }
-  return data as { id?: string; ok?: boolean };
+  return data;
 }
 
 // --- Registered Accounts Management (Admin Only) ---
@@ -134,17 +144,10 @@ export async function fetchRegisteredAccounts(): Promise<{
   staffAccounts: StaffAccountSummary[];
   studentAccounts: StudentAccountSummary[];
 }> {
-  const res = await fetch('/api/staff/accounts', {
-    headers: authHeaders(),
-  });
-  const data = await res.json();
-  if (!res.ok) {
-    throw new Error(data.error || 'Gagal memuat daftar akun terdaftar.');
-  }
-  return data as {
+  return apiFetchJson<{
     staffAccounts: StaffAccountSummary[];
     studentAccounts: StudentAccountSummary[];
-  };
+  }>('/api/staff/accounts', { headers: authHeaders() }, 'Gagal memuat daftar akun terdaftar.');
 }
 
 export async function createRegisteredStaffAccount(payload: {
@@ -158,16 +161,16 @@ export async function createRegisteredStaffAccount(payload: {
   aktif?: boolean;
   permissions?: string[];
 }): Promise<StaffAccountSummary> {
-  const res = await fetch('/api/staff/accounts/staff', {
-    method: 'POST',
-    headers: authHeaders(),
-    body: JSON.stringify(payload),
-  });
-  const data = await res.json();
-  if (!res.ok) {
-    throw new Error(data.error || 'Gagal membuat akun staf baru.');
-  }
-  return data.account as StaffAccountSummary;
+  const data = await apiFetchJson<{ account: StaffAccountSummary }>(
+    '/api/staff/accounts/staff',
+    {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify(payload),
+    },
+    'Gagal membuat akun staf baru.'
+  );
+  return data.account;
 }
 
 export async function updateRegisteredStaffAccount(
@@ -184,27 +187,27 @@ export async function updateRegisteredStaffAccount(
     permissions?: string[];
   }
 ): Promise<StaffAccountSummary> {
-  const res = await fetch(`/api/staff/accounts/staff/${encodeURIComponent(id)}`, {
-    method: 'PUT',
-    headers: authHeaders(),
-    body: JSON.stringify(updates),
-  });
-  const data = await res.json();
-  if (!res.ok) {
-    throw new Error(data.error || 'Gagal memperbarui akun staf.');
-  }
-  return data.account as StaffAccountSummary;
+  const data = await apiFetchJson<{ account: StaffAccountSummary }>(
+    `/api/staff/accounts/staff/${encodeURIComponent(id)}`,
+    {
+      method: 'PUT',
+      headers: authHeaders(),
+      body: JSON.stringify(updates),
+    },
+    'Gagal memperbarui akun staf.'
+  );
+  return data.account;
 }
 
 export async function deleteRegisteredStaffAccount(id: string): Promise<void> {
-  const res = await fetch(`/api/staff/accounts/staff/${encodeURIComponent(id)}`, {
-    method: 'DELETE',
-    headers: authHeaders(),
-  });
-  const data = await res.json();
-  if (!res.ok) {
-    throw new Error(data.error || 'Gagal menghapus akun staf.');
-  }
+  await apiFetchJson<{ ok: boolean }>(
+    `/api/staff/accounts/staff/${encodeURIComponent(id)}`,
+    {
+      method: 'DELETE',
+      headers: authHeaders(),
+    },
+    'Gagal menghapus akun staf.'
+  );
 }
 
 export async function createRegisteredStudentAccount(payload: {
@@ -217,17 +220,17 @@ export async function createRegisteredStudentAccount(payload: {
   password: string;
   aktif?: boolean;
 }): Promise<StudentAccountSummary> {
-  const res = await fetch('/api/staff/accounts/student', {
-    method: 'POST',
-    headers: authHeaders(),
-    body: JSON.stringify(payload),
-  });
-  const data = await res.json();
-  if (!res.ok) {
-    throw new Error(data.error || 'Gagal membuat akun siswa.');
-  }
+  const data = await apiFetchJson<{ account: StudentAccountSummary }>(
+    '/api/staff/accounts/student',
+    {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify(payload),
+    },
+    'Gagal membuat akun siswa.'
+  );
   if (workspaceChangedListener) workspaceChangedListener();
-  return data.account as StudentAccountSummary;
+  return data.account;
 }
 
 export async function updateRegisteredStudentAccount(
@@ -241,27 +244,26 @@ export async function updateRegisteredStudentAccount(
     jurusan?: string;
   }
 ): Promise<StudentAccountSummary> {
-  const res = await fetch(`/api/staff/accounts/student/${encodeURIComponent(studentId)}`, {
-    method: 'PUT',
-    headers: authHeaders(),
-    body: JSON.stringify(updates),
-  });
-  const data = await res.json();
-  if (!res.ok) {
-    throw new Error(data.error || 'Gagal memperbarui akun siswa.');
-  }
+  const data = await apiFetchJson<{ account: StudentAccountSummary }>(
+    `/api/staff/accounts/student/${encodeURIComponent(studentId)}`,
+    {
+      method: 'PUT',
+      headers: authHeaders(),
+      body: JSON.stringify(updates),
+    },
+    'Gagal memperbarui akun siswa.'
+  );
   if (workspaceChangedListener) workspaceChangedListener();
-  return data.account as StudentAccountSummary;
+  return data.account;
 }
 
 export async function deleteRegisteredStudentAccount(studentId: string): Promise<void> {
-  const res = await fetch(`/api/staff/accounts/student/${encodeURIComponent(studentId)}`, {
-    method: 'DELETE',
-    headers: authHeaders(),
-  });
-  const data = await res.json();
-  if (!res.ok) {
-    throw new Error(data.error || 'Gagal menghapus akun siswa.');
-  }
-  if (workspaceChangedListener) workspaceChangedListener();
+  await apiFetchJson<{ ok: boolean }>(
+    `/api/staff/accounts/student/${encodeURIComponent(studentId)}`,
+    {
+      method: 'DELETE',
+      headers: authHeaders(),
+    },
+    'Gagal menghapus akun siswa.'
+  );
 }

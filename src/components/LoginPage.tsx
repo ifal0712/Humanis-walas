@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { signInWithPopup } from 'firebase/auth';
 import { auth, googleProvider } from '../lib/firebase';
 import {
@@ -19,6 +19,7 @@ import {
   X,
 } from 'lucide-react';
 import type { StaffRole, StaffSession, StudentPortalData, StudentSession } from '../types/humanis';
+import { checkBackendHealth } from '../lib/apiClient';
 import { loginStaffCredentials } from '../lib/staffPortalService';
 import { loginStudentAccount, registerStudentAccount } from '../lib/studentPortalService';
 
@@ -67,11 +68,23 @@ export const LoginPage: React.FC<LoginPageProps> = ({
 
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [backendReady, setBackendReady] = useState<boolean | null>(null);
   const [showForgotModal, setShowForgotModal] = useState(false);
   const [forgotEmail, setForgotEmail] = useState('');
   const [forgotSent, setForgotSent] = useState(false);
   const [heroImgFailed, setHeroImgFailed] = useState(false);
   const [emblemFailed, setEmblemFailed] = useState(false);
+
+  // Pre-warm server backend on mount so Cloud Run container wakes up before login click
+  useEffect(() => {
+    let active = true;
+    checkBackendHealth().then((ok) => {
+      if (active) setBackendReady(ok);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const persistLoginPreferences = () => {
     if (rememberMe && nip.trim()) {
@@ -282,6 +295,29 @@ export const LoginPage: React.FC<LoginPageProps> = ({
                 <span>Login Siswa</span>
               </button>
             </div>
+
+            {backendReady === false && (
+              <div className="flex items-start justify-between gap-2.5 p-3 rounded-lg bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-xs text-slate-700 dark:text-slate-300">
+                <div className="flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-500" />
+                  <p className="leading-relaxed">
+                    Server login sedang bersiap atau Anda membuka pratinjau statis. Tekan{' '}
+                    <strong>Muat Ulang</strong> atau gunakan <strong>Login dengan Google</strong>{' '}
+                    di bawah jika tidak tersedia.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setErrorMsg(null);
+                    checkBackendHealth().then((ok) => setBackendReady(ok));
+                  }}
+                  className="px-2.5 py-1 rounded-md border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-xs font-medium whitespace-nowrap shrink-0 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800"
+                >
+                  Cek Ulang
+                </button>
+              </div>
+            )}
 
             {errorMsg && (
               <div className="flex items-start gap-2.5 p-3 rounded-lg bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800 text-xs text-amber-800 dark:text-amber-200">

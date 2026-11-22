@@ -10,7 +10,9 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-const PORT = Number(process.env.PORT || 3000);
+const portArgIdx = process.argv.indexOf('--port');
+const cliPort = portArgIdx !== -1 ? Number(process.argv[portArgIdx + 1]) : NaN;
+const PORT = Number(process.env.PORT || (Number.isFinite(cliPort) ? cliPort : 3000));
 const STORE_PATH = path.resolve(__dirname, '.humanis-student-portal.json');
 const SESSION_SECRET =
   process.env.STUDENT_SESSION_SECRET ||
@@ -1774,6 +1776,23 @@ Buatlah ringkasan insight kelas (2-3 kalimat, langsung menyebut aspek paling lem
     res.status(500).json({ error: message });
   }
 });
+
+// Guarantee JSON responses for unknown /api routes and Express JSON errors
+app.use('/api', (_req, res) => {
+  res.status(404).json({ error: 'Endpoint API tidak ditemukan.' });
+});
+
+app.use(
+  (
+    err: unknown,
+    _req: express.Request,
+    res: express.Response,
+    _next: express.NextFunction
+  ) => {
+    console.error('Unhandled API error:', err);
+    res.status(500).json({ error: 'Terjadi kesalahan internal pada server.' });
+  }
+);
 
 async function startServer() {
   if (process.env.NODE_ENV !== 'production') {
