@@ -71,6 +71,8 @@ import { AIAdvisorView } from './components/AIAdvisorView';
 import { ReportsView } from './components/ReportsView';
 import { RoleManagementView } from './components/RoleManagementView';
 import { ThemeSettingsView } from './components/ThemeSettingsView';
+import { GoogleSheetsSyncView } from './components/GoogleSheetsSyncView';
+import { setWorkspaceAccessToken } from './lib/googleWorkspaceService';
 
 const MENU_TITLES: Record<AppMenuKey, string> = {
   home: 'Menu Utama',
@@ -85,6 +87,7 @@ const MENU_TITLES: Record<AppMenuKey, string> = {
   laporan: 'Laporan',
   peran: 'Manajemen Peran',
   tema: 'Kostumisasi Tema',
+  spreadsheet: 'Google Sheets & Drive',
 };
 
 const ROLE_LABELS: Record<StaffRole, string> = {
@@ -210,6 +213,11 @@ export default function App() {
     const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
       setUser(firebaseUser);
       if (firebaseUser) {
+        if (staffSessionRef.current) {
+          // Staff logged in via credentials connecting Google mid-session for Drive/Sheets only
+          setAuthReady(true);
+          return;
+        }
         setActiveMenu('home'); // Always start on the Grid Menu right after login
         firebaseUser
           .getIdToken()
@@ -246,6 +254,7 @@ export default function App() {
           console.error('Gagal memuat profil pengguna:', err);
         }
       } else {
+        setWorkspaceAccessToken(null);
         setProfile(null);
         setUserProfiles([]);
         if (!staffSessionRef.current) {
@@ -265,9 +274,9 @@ export default function App() {
     return () => unsub();
   }, [pendingMeta]);
 
-  // Firestore real-time subscriptions once authenticated via Google
+  // Firestore real-time subscriptions once authenticated via Google (when not in credential staffSession)
   useEffect(() => {
-    if (!authReady || !user) return;
+    if (!authReady || !user || staffSession) return;
 
     const unsubs = [
       subscribeOwnedCollection<Student>('students', user.uid, isEmailAdmin, (items) => {
@@ -298,9 +307,9 @@ export default function App() {
     };
   }, [authReady, user, isEmailAdmin]);
 
-  // Load & refresh Server Staff Workspace when logged in via Admin/Staff credentials (non-Firebase)
+  // Load & refresh Server Staff Workspace when logged in via Admin/Staff credentials
   useEffect(() => {
-    if (!staffSession || user) {
+    if (!staffSession) {
       onStaffWorkspaceMutated(null);
       return;
     }
@@ -322,7 +331,7 @@ export default function App() {
       cancelled = true;
       onStaffWorkspaceMutated(null);
     };
-  }, [staffSession, user, applyWorkspaceSnapshot]);
+  }, [staffSession, applyWorkspaceSnapshot]);
 
   // Hydrate saved Student Portal session if active and no Staff user
   useEffect(() => {
@@ -348,9 +357,9 @@ export default function App() {
     };
   }, [studentSession, studentPortalData, user, staffSession]);
 
-  // Synchronize pending student actions & Firestore snapshot whenever Staff is authenticated
+  // Synchronize pending student actions & Firestore snapshot whenever Staff is authenticated via Google
   useEffect(() => {
-    if (!authReady || !user || !studentsLoaded) return;
+    if (!authReady || !user || !studentsLoaded || staffSession) return;
     let cancelled = false;
     const runSync = async () => {
       try {
@@ -441,11 +450,11 @@ export default function App() {
     statements,
   ]);
 
-  const effectiveUid = user?.uid || staffSession?.id || '';
+  const effectiveUid = staffSession?.id || user?.uid || '';
   const effectiveDisplayName =
-    profile?.displayName || user?.displayName || staffSession?.displayName || 'Pendidik SMK';
-  const effectiveNip = profile?.nip || staffSession?.nip;
-  const baseStaffRole: StaffRole = profile?.staffRole || staffSession?.staffRole || 'wali_kelas';
+    staffSession?.displayName || profile?.displayName || user?.displayName || 'Pendidik SMK';
+  const effectiveNip = staffSession?.nip || profile?.nip;
+  const baseStaffRole: StaffRole = staffSession?.staffRole || profile?.staffRole || 'wali_kelas';
   const staffRole: StaffRole = previewRole || baseStaffRole;
   const isAdminCapable = isEmailAdmin || baseStaffRole === 'admin';
 
@@ -510,6 +519,7 @@ export default function App() {
   };
 
   const handleStaffLogout = async () => {
+    setWorkspaceAccessToken(null);
     if (user) {
       await signOut(auth);
     }
@@ -707,6 +717,7 @@ export default function App() {
               setSelectedStudentId(id);
               setActiveMenu('diagnostik');
             }}
+            onOpenGoogleSheets={() => setActiveMenu('spreadsheet')}
           />
         )}
 
@@ -794,6 +805,7 @@ export default function App() {
             reports={reports}
             selectedStudentId={selectedStudentId}
             onSelectStudent={setSelectedStudentId}
+            onOpenGoogleSheets={() => setActiveMenu('spreadsheet')}
           />
         )}
 
@@ -813,6 +825,21 @@ export default function App() {
             theme={theme}
             onUpdateLocalTheme={setTheme}
             onPersistTheme={handlePersistTheme}
+          />
+        )}
+
+        {activeMenu === 'spreadsheet' && (
+          <GoogleSheetsSyncView
+            ownerId={effectiveUid}
+            schoolName={theme.schoolName || 'SMK Negeri 1 Sidayu'}
+            staffRole={staffRole}
+            students={students}
+            diagnostics={diagnostics}
+            humanisList={humanisList}
+            observations={observations}
+            processes={processes}
+            statements={statements}
+            reports={reports}
           />
         )}
       </main>

@@ -3,11 +3,18 @@ import { getAuth, GoogleAuthProvider } from 'firebase/auth';
 import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
+export const WORKSPACE_SCOPES = [
+  'https://www.googleapis.com/auth/spreadsheets',
+  'https://www.googleapis.com/auth/drive.file',
+] as const;
+
 const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 export const auth = getAuth(app);
+
 export const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({ prompt: 'select_account' });
+WORKSPACE_SCOPES.forEach((scope) => googleProvider.addScope(scope));
 
 export enum OperationType {
   CREATE = 'create',
@@ -70,7 +77,6 @@ export async function testConnection(): Promise<boolean> {
       console.error('Firestore connection failed: the client is offline. Please check your Firebase configuration.');
       return false;
     }
-    // Permission denied on nonexistent test/connection confirms live server reachability
     return true;
   }
 }

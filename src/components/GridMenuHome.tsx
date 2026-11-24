@@ -12,6 +12,7 @@ import {
   ShieldCheck,
   Palette,
   Database,
+  FileSpreadsheet,
   Loader2,
   ChevronLeft,
   ChevronRight,
@@ -30,7 +31,8 @@ export type AppMenuKey =
   | 'ai'
   | 'laporan'
   | 'peran'
-  | 'tema';
+  | 'tema'
+  | 'spreadsheet';
 
 interface GridMenuHomeProps {
   staffName: string;
@@ -149,6 +151,12 @@ export const GridMenuHome: React.FC<GridMenuHomeProps> = ({
       id: 'tema',
       title: 'Kostumisasi Tema',
       icon: Palette,
+      roles: ['admin', 'wali_kelas', 'guru_bk', 'kepala_sekolah'],
+    },
+    {
+      id: 'spreadsheet',
+      title: 'Google Sheets & Drive',
+      icon: FileSpreadsheet,
       roles: ['admin', 'wali_kelas', 'guru_bk', 'kepala_sekolah'],
     },
   ];

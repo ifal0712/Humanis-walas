@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { signInWithPopup } from 'firebase/auth';
+import { GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
 import { auth, googleProvider } from '../lib/firebase';
+import { setWorkspaceAccessToken } from '../lib/googleWorkspaceService';
 import {
   Lock,
   UserCheck,
@@ -102,7 +103,11 @@ export const LoginPage: React.FC<LoginPageProps> = ({
     setLoading(true);
     persistLoginPreferences();
     try {
-      await signInWithPopup(auth, googleProvider);
+      const result = await signInWithPopup(auth, googleProvider);
+      const cred = GoogleAuthProvider.credentialFromResult(result);
+      if (cred?.accessToken) {
+        setWorkspaceAccessToken(cred.accessToken, result.user.email);
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Gagal masuk dengan Google.';
       setErrorMsg(

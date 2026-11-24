@@ -13,7 +13,11 @@ import {
   type Unsubscribe,
 } from 'firebase/firestore';
 import { auth, db, handleFirestoreError, OperationType } from './firebase';
-import { getStaffAuthToken, mutateStaffWorkspace } from './staffPortalService';
+import {
+  getStaffAuthToken,
+  isServerWorkspacePreferred,
+  mutateStaffWorkspace,
+} from './staffPortalService';
 import type {
   UserProfile,
   RoleAssignment,
@@ -32,7 +36,7 @@ const clip = (val: string | undefined, max: number): string =>
   (val ?? '').trim().slice(0, max);
 
 const shouldUseServerWorkspace = (): boolean =>
-  !auth.currentUser && Boolean(getStaffAuthToken());
+  (isServerWorkspacePreferred() || !auth.currentUser) && Boolean(getStaffAuthToken());
 
 // 1. User Profile Operations
 export async function getOrCreateUserProfile(params: {

@@ -8,7 +8,7 @@ import {
   CartesianGrid,
   Tooltip,
 } from 'recharts';
-import { FileText, FileSpreadsheet, Printer } from 'lucide-react';
+import { FileText, FileSpreadsheet, Printer, CloudUpload } from 'lucide-react';
 import type {
   CoachingProcess,
   Diagnostic,
@@ -34,6 +34,7 @@ interface ReportsViewProps {
   reports: ReportRecord[];
   selectedStudentId: string;
   onSelectStudent: (id: string) => void;
+  onOpenGoogleSheets?: () => void;
 }
 
 export const ReportsView: React.FC<ReportsViewProps> = ({
@@ -46,6 +47,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
   reports,
   selectedStudentId,
   onSelectStudent,
+  onOpenGoogleSheets,
 }) => {
   const [reportTab, setReportTab] = useState<'individu' | 'kelas'>('individu');
   const [classFilter, setClassFilter] = useState('Semua');
@@ -232,6 +234,17 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
             <Printer className="w-4 h-4" />
             <span>Cetak</span>
           </button>
+
+          {onOpenGoogleSheets && (
+            <button
+              type="button"
+              onClick={onOpenGoogleSheets}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-medium whitespace-nowrap cursor-pointer"
+            >
+              <CloudUpload className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+              <span>Simpan ke Google Drive</span>
+            </button>
+          )}
         </div>
       </div>
 

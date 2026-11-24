@@ -11,6 +11,7 @@ import {
   AlertCircle,
   Loader2,
   UserPlus,
+  FileSpreadsheet,
 } from 'lucide-react';
 import type { StaffRole, Student } from '../types/humanis';
 import { createStudent, deleteStudent, updateStudent } from '../lib/firestoreService';
@@ -22,6 +23,7 @@ interface StudentsViewProps {
   students: Student[];
   staffRole: StaffRole;
   onSelectForDiagnostic: (studentId: string) => void;
+  onOpenGoogleSheets?: () => void;
 }
 
 const emptyForm = {
@@ -43,6 +45,7 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
   students,
   staffRole,
   onSelectForDiagnostic,
+  onOpenGoogleSheets,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [classFilter, setClassFilter] = useState('Semua');
@@ -248,6 +251,17 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
             <Download className="w-4 h-4" />
             <span>Export Excel</span>
           </button>
+
+          {onOpenGoogleSheets && (
+            <button
+              type="button"
+              onClick={onOpenGoogleSheets}
+              className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-medium transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+            >
+              <FileSpreadsheet className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+              <span>Google Sheets</span>
+            </button>
+          )}
 
           {canEdit && (
             <button

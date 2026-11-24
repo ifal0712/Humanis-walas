@@ -17,14 +17,26 @@ import { apiFetchJson } from './apiClient';
 
 // Keep non-Firebase Bearer tokens strictly in JS memory (never localStorage/sessionStorage)
 let inMemoryStaffToken: string | null = null;
+let preferServerWorkspace = false;
 let workspaceChangedListener: (() => void) | null = null;
 
 export function setStaffAuthToken(token: string | null): void {
   inMemoryStaffToken = token;
+  if (!token) {
+    preferServerWorkspace = false;
+  }
 }
 
 export function getStaffAuthToken(): string | null {
   return inMemoryStaffToken;
+}
+
+export function setPreferServerWorkspace(enabled: boolean): void {
+  preferServerWorkspace = enabled;
+}
+
+export function isServerWorkspacePreferred(): boolean {
+  return preferServerWorkspace;
 }
 
 export function onStaffWorkspaceMutated(cb: (() => void) | null): void {
@@ -63,6 +75,7 @@ export async function loginStaffCredentials(
     'Gagal masuk sebagai Admin / Staf.'
   );
   inMemoryStaffToken = data.token;
+  preferServerWorkspace = true;
   return {
     token: data.token,
     id: data.user.id,
@@ -90,6 +103,7 @@ export async function exchangeFirebaseTokenForStaffToken(
     );
     if (data.token) {
       inMemoryStaffToken = data.token;
+      preferServerWorkspace = false;
       return data.token;
     }
     return null;
