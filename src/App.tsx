@@ -1,18 +1,17 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { onAuthStateChanged, signOut, type User } from 'firebase/auth';
 import {
-  LayoutGrid,
   LayoutDashboard,
   Users,
   Compass,
-  Palette,
-  ShieldCheck,
   Sun,
   Moon,
   LogOut,
-  ArrowLeft,
   Loader2,
   ListChecks,
+  Menu,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from 'lucide-react';
 import { auth } from './lib/firebase';
 import {
@@ -76,6 +75,7 @@ import { RoleManagementView } from './components/RoleManagementView';
 import { ThemeSettingsView } from './components/ThemeSettingsView';
 import { GoogleSheetsSyncView } from './components/GoogleSheetsSyncView';
 import { RubricAssessmentView } from './components/RubricAssessmentView';
+import { AppSidebar } from './components/AppSidebar';
 import { setWorkspaceAccessToken } from './lib/googleWorkspaceService';
 
 const MENU_TITLES: Record<AppMenuKey, string> = {
@@ -153,11 +153,23 @@ export default function App() {
   const [studentPortalData, setStudentPortalData] = useState<StudentPortalData | null>(null);
   const [studentLoading, setStudentLoading] = useState(false);
 
-  // Default landing screen after login is the Grid Menu ('home')
-  const [activeMenu, setActiveMenu] = useState<AppMenuKey>('home');
+  // Default landing screen after login is Dashboard Analitik; all menus live in the hideable Sidebar
+  const [activeMenu, setActiveMenu] = useState<AppMenuKey>('dashboard');
+  const [sidebarOpen, setSidebarOpen] = useState<boolean>(
+    () => localStorage.getItem('humanis_sidebar_open') !== 'false'
+  );
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [selectedStudentId, setSelectedStudentId] = useState<string>('');
   const [seeding, setSeeding] = useState(false);
   const [emblemFailed, setEmblemFailed] = useState(false);
+
+  const toggleDesktopSidebar = () => {
+    setSidebarOpen((prev) => {
+      const next = !prev;
+      localStorage.setItem('humanis_sidebar_open', String(next));
+      return next;
+    });
+  };
 
   // Synced collections (Firestore or Server Staff Workspace)
   const [studentsLoaded, setStudentsLoaded] = useState(false);
@@ -229,7 +241,7 @@ export default function App() {
           return;
         }
         if (previousUid !== firebaseUser.uid) {
-          setActiveMenu('home'); // Start on Grid Menu on fresh Google sign-in
+          setActiveMenu('dashboard');
         }
         const meta = pendingMetaRef.current;
         firebaseUser
@@ -607,7 +619,7 @@ export default function App() {
         onStaffLoginSuccess={(sess) => {
           setStaffSession(sess);
           setPreviewRole(null);
-          setActiveMenu('home');
+          setActiveMenu('dashboard');
         }}
         onStudentLoginSuccess={(sess, portal) => {
           setStudentSession(sess);
@@ -617,92 +629,105 @@ export default function App() {
     );
   }
 
-  // Static Bottom Navbar items (6 ergonomic single-line items including Penilaian Rubrik)
+  // Static Bottom Navbar items (Centered 4 core items with larger icons)
   const bottomNavItems: Array<{
     id: AppMenuKey;
     label: string;
     icon: React.ComponentType<{ className?: string }>;
   }> = [
-    { id: 'home', label: 'Menu', icon: LayoutGrid },
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'siswa', label: 'Siswa', icon: Users },
     { id: 'rubrik', label: 'Penilaian', icon: ListChecks },
-    {
-      id: staffRole === 'kepala_sekolah' ? 'laporan' : 'humanis',
-      label: staffRole === 'kepala_sekolah' ? 'Laporan' : 'HUMANIS',
-      icon: Compass,
-    },
-    {
-      id: isAdminCapable ? 'peran' : 'tema',
-      label: isAdminCapable ? 'Akun' : 'Tema',
-      icon: isAdminCapable ? ShieldCheck : Palette,
-    },
+    { id: 'humanis', label: 'HUMANIS', icon: Compass },
   ];
 
   return (
-    <div className="min-h-screen flex flex-col bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 pb-20">
-      {/* Clean Non-Sticky Top Header */}
-      <header className="no-print h-14 px-4 sm:px-6 lg:px-8 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center justify-between gap-4">
-        <div className="flex items-center gap-3 min-w-0">
-          {activeMenu !== 'home' ? (
+    <div className="min-h-screen flex bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100">
+      {/* Hideable Sidebar Navigation */}
+      <AppSidebar
+        open={sidebarOpen}
+        mobileOpen={mobileSidebarOpen}
+        activeMenu={activeMenu}
+        staffName={effectiveDisplayName}
+        staffRole={staffRole}
+        nip={effectiveNip}
+        theme={theme}
+        studentsCount={students.length}
+        emblemFailed={emblemFailed}
+        onEmblemError={() => setEmblemFailed(true)}
+        onSelectMenu={(key) => setActiveMenu(key)}
+        onHideDesktop={toggleDesktopSidebar}
+        onCloseMobile={() => setMobileSidebarOpen(false)}
+        onSeedDemo={handleSeedDemo}
+        seeding={seeding}
+      />
+
+      {/* Right Content Column */}
+      <div className="flex-1 min-w-0 flex flex-col min-h-screen">
+        {/* Clean Non-Sticky Top Header with Sidebar Toggle */}
+        <header className="no-print h-14 px-4 sm:px-6 lg:px-8 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center justify-between gap-4 shrink-0">
+          <div className="flex items-center gap-3 min-w-0">
+            {/* Mobile Sidebar Drawer Button */}
             <button
               type="button"
-              onClick={() => setActiveMenu('home')}
-              aria-label="Kembali ke Menu Kisi"
-              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer shrink-0"
+              onClick={() => setMobileSidebarOpen(true)}
+              aria-label="Buka Menu Sidebar"
+              className="lg:hidden inline-flex items-center justify-center p-2 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer shrink-0"
             >
-              <ArrowLeft className="w-3.5 h-3.5" />
-              <span>Menu</span>
+              <Menu className="w-4 h-4" />
             </button>
-          ) : !emblemFailed ? (
-            <img
-              src="/src/assets/images/humanis_emblem_1794880387572.jpg"
-              alt="Logo HUMANIS"
-              referrerPolicy="no-referrer"
-              onError={() => setEmblemFailed(true)}
-              className="w-8 h-8 rounded-lg object-cover border border-slate-200 dark:border-slate-700 shrink-0"
-            />
-          ) : (
-            <div className="w-8 h-8 rounded-lg brand-bg text-white font-bold flex items-center justify-center text-sm shrink-0">
-              H
+
+            {/* Desktop Hide/Show Sidebar Button */}
+            <button
+              type="button"
+              onClick={toggleDesktopSidebar}
+              aria-label={sidebarOpen ? 'Sembunyikan Menu Sidebar' : 'Tampilkan Menu Sidebar'}
+              title={sidebarOpen ? 'Sembunyikan Sidebar' : 'Tampilkan Sidebar'}
+              className="hidden lg:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer shrink-0"
+            >
+              {sidebarOpen ? (
+                <PanelLeftClose className="w-4 h-4" />
+              ) : (
+                <PanelLeftOpen className="w-4 h-4" />
+              )}
+              <span>{sidebarOpen ? 'Sembunyikan Menu' : 'Menu'}</span>
+            </button>
+
+            <div className="flex items-center gap-2 text-xs sm:text-sm truncate">
+              <span className="font-display font-bold text-slate-900 dark:text-white truncate">
+                {theme.schoolName || 'HUMANIS SMK'}
+              </span>
+              <span className="text-slate-300 dark:text-slate-700">/</span>
+              <span className="font-medium brand-text truncate">{MENU_TITLES[activeMenu]}</span>
             </div>
-          )}
-
-          <div className="flex items-center gap-2 text-xs sm:text-sm truncate">
-            <span className="font-display font-bold text-slate-900 dark:text-white truncate">
-              {theme.schoolName || 'HUMANIS SMK'}
-            </span>
-            <span className="text-slate-300 dark:text-slate-700">/</span>
-            <span className="font-medium brand-text truncate">{MENU_TITLES[activeMenu]}</span>
           </div>
-        </div>
 
-        <div className="flex items-center gap-2 shrink-0">
-          <span className="hidden md:inline text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap mr-1">
-            {ROLE_LABELS[staffRole]}
-          </span>
-          <button
-            type="button"
-            onClick={handleToggleQuickDark}
-            aria-label="Ubah mode gelap atau terang"
-            className="p-2 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-          >
-            {theme.mode === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-          </button>
-          <button
-            type="button"
-            onClick={handleStaffLogout}
-            aria-label="Keluar"
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-medium text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer whitespace-nowrap"
-          >
-            <LogOut className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Keluar</span>
-          </button>
-        </div>
-      </header>
+          <div className="flex items-center gap-2 shrink-0">
+            <span className="hidden md:inline text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap mr-1">
+              {ROLE_LABELS[staffRole]}
+            </span>
+            <button
+              type="button"
+              onClick={handleToggleQuickDark}
+              aria-label="Ubah mode gelap atau terang"
+              className="p-2 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+            >
+              {theme.mode === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+            </button>
+            <button
+              type="button"
+              onClick={handleStaffLogout}
+              aria-label="Keluar"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-medium text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer whitespace-nowrap"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Keluar</span>
+            </button>
+          </div>
+        </header>
 
-      {/* Main Content Viewport */}
-      <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-[1360px] w-full mx-auto">
+        {/* Main Content Viewport */}
+        <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-[1360px] w-full mx-auto">
         {activeMenu === 'home' && (
           <GridMenuHome
             staffName={effectiveDisplayName}
@@ -894,43 +919,44 @@ export default function App() {
             reports={reports}
           />
         )}
-      </main>
+        </main>
 
-      {/* Static Bottom Navigation Bar (Replaces Sidebar) */}
-      <nav
-        aria-label="Navigasi Utama Bawah"
-        className="no-print fixed bottom-0 left-0 right-0 z-40 h-16 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-200 dark:border-slate-800"
-      >
-        <div className="max-w-4xl mx-auto h-full grid grid-cols-6 items-center px-1 sm:px-2">
-          {bottomNavItems.map((item) => {
-            const Icon = item.icon;
-            const active = activeMenu === item.id;
-            return (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => setActiveMenu(item.id)}
-                className={`h-full min-h-[44px] flex flex-col items-center justify-center gap-0.5 px-0.5 transition-colors cursor-pointer ${
-                  active
-                    ? 'brand-text font-semibold'
-                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-                }`}
-              >
-                <div
-                  className={`px-2 sm:px-3 py-1 rounded-full transition-colors ${
-                    active ? 'brand-soft-bg' : ''
+        {/* Static Centered Bottom Navigation Bar (Dashboard, Siswa, Penilaian, HUMANIS - Larger Icons) */}
+        <nav
+          aria-label="Navigasi Utama Bawah"
+          className="no-print sticky bottom-0 z-30 mt-auto bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-200 dark:border-slate-800"
+        >
+          <div className="max-w-lg mx-auto h-[74px] flex items-center justify-center gap-2 sm:gap-6 px-3">
+            {bottomNavItems.map((item) => {
+              const Icon = item.icon;
+              const active = activeMenu === item.id;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => setActiveMenu(item.id)}
+                  className={`flex-1 max-w-[108px] h-full min-h-[48px] flex flex-col items-center justify-center gap-1 px-1 transition-colors cursor-pointer ${
+                    active
+                      ? 'brand-text font-semibold'
+                      : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
                   }`}
                 >
-                  <Icon className="w-5 h-5" />
-                </div>
-                <span className="text-[10px] sm:text-[11px] leading-none whitespace-nowrap">
-                  {item.label}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      </nav>
+                  <div
+                    className={`px-3.5 py-1.5 rounded-2xl transition-colors ${
+                      active ? 'brand-soft-bg' : ''
+                    }`}
+                  >
+                    <Icon className="w-6 h-6 sm:w-7 sm:h-7" />
+                  </div>
+                  <span className="text-[11px] sm:text-xs leading-none whitespace-nowrap">
+                    {item.label}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </nav>
+      </div>
     </div>
   );
 }

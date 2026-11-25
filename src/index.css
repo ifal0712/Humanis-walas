@@ -45,9 +45,16 @@
   border-radius: var(--ui-radius);
 }
 
+.print-only {
+  display: none;
+}
+
 @media print {
   .no-print {
     display: none !important;
+  }
+  .print-only {
+    display: block !important;
   }
   body {
     background: #ffffff !important;
