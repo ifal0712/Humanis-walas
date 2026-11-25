@@ -16,6 +16,7 @@ import {
   Loader2,
   ChevronLeft,
   ChevronRight,
+  ListChecks,
 } from 'lucide-react';
 import type { StaffRole, Student, ThemeSetting } from '../types/humanis';
 
@@ -24,6 +25,7 @@ export type AppMenuKey =
   | 'dashboard'
   | 'siswa'
   | 'diagnostik'
+  | 'rubrik'
   | 'humanis'
   | 'kondisi'
   | 'pembinaan'
@@ -104,6 +106,12 @@ export const GridMenuHome: React.FC<GridMenuHomeProps> = ({
       title: 'Tes Diagnostik Awal',
       icon: ClipboardList,
       roles: ['admin', 'wali_kelas', 'guru_bk'],
+    },
+    {
+      id: 'rubrik',
+      title: 'Penilaian Rubrik Lengkap',
+      icon: ListChecks,
+      roles: ['admin', 'wali_kelas', 'guru_bk', 'kepala_sekolah'],
     },
     {
       id: 'humanis',

@@ -12,6 +12,7 @@ import {
   LogOut,
   ArrowLeft,
   Loader2,
+  ListChecks,
 } from 'lucide-react';
 import { auth } from './lib/firebase';
 import {
@@ -74,6 +75,7 @@ import { ReportsView } from './components/ReportsView';
 import { RoleManagementView } from './components/RoleManagementView';
 import { ThemeSettingsView } from './components/ThemeSettingsView';
 import { GoogleSheetsSyncView } from './components/GoogleSheetsSyncView';
+import { RubricAssessmentView } from './components/RubricAssessmentView';
 import { setWorkspaceAccessToken } from './lib/googleWorkspaceService';
 
 const MENU_TITLES: Record<AppMenuKey, string> = {
@@ -81,6 +83,7 @@ const MENU_TITLES: Record<AppMenuKey, string> = {
   dashboard: 'Dashboard Analitik',
   siswa: 'Data Siswa',
   diagnostik: 'Tes Diagnostik Awal',
+  rubrik: 'Penilaian Kemandirian (Rubrik)',
   humanis: 'Tahapan HUMANIS',
   kondisi: 'Kondisi Saat Ini',
   pembinaan: 'Proses Pembinaan',
@@ -614,7 +617,7 @@ export default function App() {
     );
   }
 
-  // Static Bottom Navbar items (5 ergonomic single-line items)
+  // Static Bottom Navbar items (6 ergonomic single-line items including Penilaian Rubrik)
   const bottomNavItems: Array<{
     id: AppMenuKey;
     label: string;
@@ -623,6 +626,7 @@ export default function App() {
     { id: 'home', label: 'Menu', icon: LayoutGrid },
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'siswa', label: 'Siswa', icon: Users },
+    { id: 'rubrik', label: 'Penilaian', icon: ListChecks },
     {
       id: staffRole === 'kepala_sekolah' ? 'laporan' : 'humanis',
       label: staffRole === 'kepala_sekolah' ? 'Laporan' : 'HUMANIS',
@@ -761,6 +765,23 @@ export default function App() {
           />
         )}
 
+        {activeMenu === 'rubrik' && (
+          <RubricAssessmentView
+            ownerId={effectiveUid}
+            students={students}
+            diagnostics={diagnostics}
+            selectedStudentId={selectedStudentId}
+            onSelectStudent={setSelectedStudentId}
+            staffRole={effectiveModuleRole}
+            schoolName={theme.schoolName || 'SMK Negeri 1 Sidayu'}
+            evaluatorName={effectiveDisplayName}
+            onOpenStudentReport={(id) => {
+              setSelectedStudentId(id);
+              setActiveMenu('laporan');
+            }}
+          />
+        )}
+
         {activeMenu === 'humanis' && (
           <HumanisView
             ownerId={effectiveUid}
@@ -880,7 +901,7 @@ export default function App() {
         aria-label="Navigasi Utama Bawah"
         className="no-print fixed bottom-0 left-0 right-0 z-40 h-16 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-200 dark:border-slate-800"
       >
-        <div className="max-w-3xl mx-auto h-full grid grid-cols-5 items-center px-2">
+        <div className="max-w-4xl mx-auto h-full grid grid-cols-6 items-center px-1 sm:px-2">
           {bottomNavItems.map((item) => {
             const Icon = item.icon;
             const active = activeMenu === item.id;
@@ -889,20 +910,22 @@ export default function App() {
                 key={item.id}
                 type="button"
                 onClick={() => setActiveMenu(item.id)}
-                className={`h-full min-h-[44px] flex flex-col items-center justify-center gap-0.5 transition-colors cursor-pointer ${
+                className={`h-full min-h-[44px] flex flex-col items-center justify-center gap-0.5 px-0.5 transition-colors cursor-pointer ${
                   active
                     ? 'brand-text font-semibold'
                     : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
                 }`}
               >
                 <div
-                  className={`px-3 py-1 rounded-full transition-colors ${
+                  className={`px-2 sm:px-3 py-1 rounded-full transition-colors ${
                     active ? 'brand-soft-bg' : ''
                   }`}
                 >
                   <Icon className="w-5 h-5" />
                 </div>
-                <span className="text-[11px] leading-none whitespace-nowrap">{item.label}</span>
+                <span className="text-[10px] sm:text-[11px] leading-none whitespace-nowrap">
+                  {item.label}
+                </span>
               </button>
             );
           })}
