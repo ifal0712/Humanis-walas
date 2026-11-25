@@ -804,6 +804,9 @@ export function localMutateStaffWorkspace(
 
     case 'saveDiagnostic': {
       const diagId = `diag_${randomHex(6)}`;
+      const rawPeriod = Number(payload?.periodMonths);
+      const periodMonths: 0 | 3 | 6 | 12 =
+        rawPeriod === 3 || rawPeriod === 6 || rawPeriod === 12 ? rawPeriod : 0;
       const record: Diagnostic = {
         id: diagId,
         ownerId: actorId,
@@ -818,6 +821,7 @@ export function localMutateStaffWorkspace(
         totalScore: Number(payload?.totalScore || 0),
         category: (payload?.category as IndependenceCategory) || 'Sedang',
         assessedDate: String(payload?.assessedDate || now.slice(0, 10)),
+        periodMonths,
         notes: String(payload?.notes || ''),
         createdAt: now,
       };

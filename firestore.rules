@@ -120,7 +120,7 @@ service cloud.firestore {
 
     function isValidDiagnostic(data) {
       return data.keys().hasAll(['ownerId', 'studentId', 'studentName', 'kelas', 'tanggungJawab', 'disiplin', 'inisiatif', 'pengambilanKeputusan', 'manajemenDiri', 'totalScore', 'category', 'assessedDate', 'createdAt']) &&
-        data.keys().hasOnly(['ownerId', 'studentId', 'studentName', 'kelas', 'tanggungJawab', 'disiplin', 'inisiatif', 'pengambilanKeputusan', 'manajemenDiri', 'totalScore', 'category', 'assessedDate', 'notes', 'createdAt']) &&
+        data.keys().hasOnly(['ownerId', 'studentId', 'studentName', 'kelas', 'tanggungJawab', 'disiplin', 'inisiatif', 'pengambilanKeputusan', 'manajemenDiri', 'totalScore', 'category', 'assessedDate', 'periodMonths', 'notes', 'createdAt']) &&
         isValidId(data.ownerId) &&
         isValidId(data.studentId) &&
         data.studentName is string && data.studentName.size() >= 1 && data.studentName.size() <= 120 &&
@@ -133,6 +133,7 @@ service cloud.firestore {
         data.totalScore is number && data.totalScore >= 0 && data.totalScore <= 100 &&
         data.category in ['Sangat Rendah', 'Rendah', 'Sedang', 'Baik', 'Sangat Baik'] &&
         isValidDateStr(data.assessedDate) &&
+        (!('periodMonths' in data) || (data.periodMonths is number && data.periodMonths in [0, 3, 6, 12])) &&
         (!('notes' in data) || isValidOptStr(data.notes, 500)) &&
         data.createdAt is timestamp;
     }

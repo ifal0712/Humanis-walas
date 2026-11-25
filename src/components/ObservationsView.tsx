@@ -11,6 +11,11 @@ import {
 import { CheckCircle2, AlertTriangle, MinusCircle, Plus, Loader2 } from 'lucide-react';
 import type { ConditionLevel, Observation, StaffRole, Student } from '../types/humanis';
 import { saveObservation } from '../lib/firestoreService';
+import {
+  REPORT_PERIOD_OPTIONS,
+  filterByPeriodWindow,
+  type ReportPeriodFilter,
+} from '../lib/periodUtils';
 
 interface ObservationsViewProps {
   ownerId: string;
@@ -44,13 +49,15 @@ export const ObservationsView: React.FC<ObservationsViewProps> = ({
   const [skorKemandirian, setSkorKemandirian] = useState(70);
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [periodRange, setPeriodRange] = useState<ReportPeriodFilter>('all');
 
   const studentObservations = useMemo(() => {
     if (!activeStudent) return [];
-    return observations
+    const sorted = observations
       .filter((o) => o.studentId === activeStudent.id)
       .sort((a, b) => a.tanggal.localeCompare(b.tanggal));
-  }, [observations, activeStudent]);
+    return filterByPeriodWindow(sorted, (o) => o.tanggal, periodRange);
+  }, [observations, activeStudent, periodRange]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -252,13 +259,31 @@ export const ObservationsView: React.FC<ObservationsViewProps> = ({
           } space-y-6`}
         >
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 space-y-4">
-            <div>
-              <h2 className="font-display text-base font-semibold text-slate-900 dark:text-white">
-                Tren Perkembangan — {activeStudent.namaLengkap}
-              </h2>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                Perubahan skor observasi kemandirian dari waktu ke waktu
-              </p>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div>
+                <h2 className="font-display text-base font-semibold text-slate-900 dark:text-white">
+                  Tren Perkembangan — {activeStudent.namaLengkap}
+                </h2>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Perubahan skor observasi kemandirian dari waktu ke waktu
+                </p>
+              </div>
+              <div className="flex items-center gap-1 p-0.5 bg-slate-100 dark:bg-slate-800 rounded-lg self-start sm:self-auto">
+                {REPORT_PERIOD_OPTIONS.map((opt) => (
+                  <button
+                    key={String(opt.value)}
+                    type="button"
+                    onClick={() => setPeriodRange(opt.value)}
+                    className={`px-2.5 py-1 text-[11px] font-medium rounded-md transition-colors cursor-pointer ${
+                      periodRange === opt.value
+                        ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-xs'
+                        : 'text-slate-600 dark:text-slate-400'
+                    }`}
+                  >
+                    {opt.shortLabel}
+                  </button>
+                ))}
+              </div>
             </div>
 
             <div className="h-64 w-full">

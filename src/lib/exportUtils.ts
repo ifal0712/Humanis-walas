@@ -332,93 +332,236 @@ export function exportClassReportToExcel(
 export function exportIndividualReportToPDF(params: {
   student: Student;
   diagnostic?: Diagnostic;
+  diagnosticsInPeriod?: Diagnostic[];
   humanis?: HumanisProgress;
   observations: Observation[];
   processes: CoachingProcess[];
   statements: GoodStatement[];
   aiAnalysis?: AIStudentAnalysisResult | null;
+  periodLabel?: string;
+  schoolName?: string;
+  waliKelasName?: string;
 }) {
-  const { student, diagnostic, humanis, observations, processes, aiAnalysis } = params;
+  const {
+    student,
+    diagnostic,
+    diagnosticsInPeriod = diagnostic ? [diagnostic] : [],
+    humanis,
+    observations,
+    processes,
+    statements,
+    aiAnalysis,
+    periodLabel = 'Semua Periode',
+    schoolName = 'SMK Negeri 1 Sidayu',
+    waliKelasName = 'Wali Kelas',
+  } = params;
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const ensureSpace = (neededMm: number, currentY: number): number => {
+    if (currentY + neededMm > pageHeight - 18) {
+      doc.addPage();
+      return 18;
+    }
+    return currentY;
+  };
+  const lastY = () =>
+    (doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? 40;
 
-  doc.setFontSize(15);
+  doc.setFontSize(14);
   doc.setTextColor(37, 99, 235);
-  doc.text('LAPORAN PERKEMBANGAN KEMANDIRIAN SISWA (HUMANIS)', 14, 18);
-  doc.setFontSize(10);
+  doc.text('LAPORAN KONDISI & KEMANDIRIAN INDIVIDU SISWA (HUMANIS)', 14, 17);
+  doc.setFontSize(9.5);
   doc.setTextColor(71, 85, 105);
-  doc.text(`Dicetak pada: ${new Date().toLocaleDateString('id-ID', { dateStyle: 'long' })}`, 14, 24);
+  doc.text(
+    `${schoolName} · Periode Evaluasi: ${periodLabel} · Dicetak: ${new Date().toLocaleDateString('id-ID', { dateStyle: 'long' })}`,
+    14,
+    23
+  );
+
+  const conditionText =
+    student.latestCondition === 'baik'
+      ? 'Baik & Mandiri'
+      : student.latestCondition === 'perlu_pendampingan'
+        ? 'Perlu Pendampingan Intensif'
+        : 'Cukup & Berkembang';
 
   autoTable(doc, {
-    startY: 29,
-    head: [['Biodata Siswa', 'Keterangan']],
+    startY: 28,
+    head: [['Identitas & Kondisi Individu Siswa', 'Keterangan']],
     body: [
-      ['Nama Lengkap', student.namaLengkap],
+      ['Nama Lengkap / L/P', `${student.namaLengkap} (${student.jenisKelamin})`],
       ['NISN', student.nisn],
       ['Kelas / Jurusan', `${student.kelas} — ${student.jurusan}`],
+      ['No. HP / Alamat', `${student.noHp || '-'} · ${student.alamat || '-'}`],
       ['Orang Tua / Wali', `${student.namaOrangTua || '-'} (${student.nomorOrangTua || '-'})`],
-      ['Skor Kemandirian', `${diagnostic?.totalScore ?? student.latestScore ?? 0}/100 (${diagnostic?.category ?? student.latestCategory ?? '-'})`],
-      ['Tahap HUMANIS Terlaksana', `${humanis?.completedStages.length ?? 0} dari 7 Tahap (${humanis?.completedStages.join(', ') || '-'})`],
+      ['Status Kondisi Terkini', conditionText],
+      [
+        'Skor Kemandirian',
+        `${diagnostic?.totalScore ?? student.latestScore ?? 0}/100 (${diagnostic?.category ?? student.latestCategory ?? '-'})`,
+      ],
+      [
+        'Tahap HUMANIS Terlaksana',
+        `${humanis?.completedStages.length ?? 0} dari 7 Tahap (${humanis?.completedStages.join(', ') || '-'})`,
+      ],
     ],
     theme: 'grid',
     headStyles: { fillColor: [37, 99, 235] },
-    styles: { fontSize: 9 },
+    styles: { fontSize: 8.5, cellPadding: 2.2 },
   });
 
-  let nextY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 8;
+  let nextY = lastY() + 7;
 
   if (diagnostic) {
+    nextY = ensureSpace(44, nextY);
     autoTable(doc, {
       startY: nextY,
-      head: [['Aspek Kemandirian', 'Skor (1-5)']],
+      head: [['Aspek Kemandirian (Penilaian Terakhir)', 'Skor (1–5)']],
       body: [
-        ['Tanggung Jawab', String(diagnostic.tanggungJawab)],
-        ['Disiplin', String(diagnostic.disiplin)],
-        ['Inisiatif', String(diagnostic.inisiatif)],
-        ['Pengambilan Keputusan', String(diagnostic.pengambilanKeputusan)],
-        ['Manajemen Diri', String(diagnostic.manajemenDiri)],
+        ['Tanggung Jawab', `${diagnostic.tanggungJawab}/5`],
+        ['Disiplin', `${diagnostic.disiplin}/5`],
+        ['Inisiatif', `${diagnostic.inisiatif}/5`],
+        ['Pengambilan Keputusan', `${diagnostic.pengambilanKeputusan}/5`],
+        ['Manajemen Diri', `${diagnostic.manajemenDiri}/5`],
       ],
       theme: 'striped',
       headStyles: { fillColor: [30, 41, 59] },
-      styles: { fontSize: 9 },
+      styles: { fontSize: 8.5, cellPadding: 2 },
     });
-    nextY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 8;
+    nextY = lastY() + 7;
   }
 
-  if (aiAnalysis) {
-    doc.setFontSize(11);
-    doc.setTextColor(15, 23, 42);
-    doc.text('Analisis & Rekomendasi Gemini AI', 14, nextY);
-    nextY += 5;
-    doc.setFontSize(9);
-    doc.setTextColor(51, 65, 85);
-    const wrappedAnalysis = doc.splitTextToSize(aiAnalysis.analisisSiswa, 180);
-    doc.text(wrappedAnalysis, 14, nextY);
-    nextY += wrappedAnalysis.length * 4.5 + 4;
-    doc.text(`Prediksi Perkembangan: ${aiAnalysis.prediksiPerkembangan}`, 14, nextY);
-    nextY += 6;
+  if (diagnosticsInPeriod.length > 0) {
+    nextY = ensureSpace(32, nextY);
+    const periodText = (pm?: number) =>
+      pm === 3
+        ? 'Periodik 3 Bulan'
+        : pm === 6
+          ? 'Periodik 6 Bulan'
+          : pm === 12
+            ? 'Periodik 12 Bulan'
+            : 'Diagnostik Awal';
+    autoTable(doc, {
+      startY: nextY,
+      head: [['Tanggal', 'Periode Penilaian', 'Skor', 'Kategori', 'Catatan']],
+      body: diagnosticsInPeriod.map((d) => [
+        d.assessedDate,
+        periodText(d.periodMonths),
+        `${d.totalScore}/100`,
+        d.category,
+        d.notes || '-',
+      ]),
+      theme: 'grid',
+      headStyles: { fillColor: [37, 99, 235] },
+      styles: { fontSize: 8, cellPadding: 2 },
+    });
+    nextY = lastY() + 7;
+  }
+
+  if (observations.length > 0) {
+    nextY = ensureSpace(36, nextY);
+    autoTable(doc, {
+      startY: nextY,
+      head: [['Tanggal', 'Skor', 'Kondisi Akademik', 'Kondisi Sosial', 'Kondisi Emosional']],
+      body: observations.slice(-8).map((o) => [
+        o.tanggal,
+        `${o.skorKemandirian}`,
+        o.kondisiAkademik,
+        o.kondisiSosial,
+        o.kondisiEmosional,
+      ]),
+      theme: 'grid',
+      headStyles: { fillColor: [15, 118, 110] },
+      styles: { fontSize: 7.8, cellPadding: 2 },
+    });
+    nextY = lastY() + 7;
+  }
+
+  if (humanis) {
+    nextY = ensureSpace(38, nextY);
+    autoTable(doc, {
+      startY: nextY,
+      head: [['Ringkasan Pembinaan HUMANIS', 'Isian & Capaian']],
+      body: [
+        ['H — Minat, Bakat & Cita-cita', `${humanis.hMinat || '-'} | Cita-cita: ${humanis.hCitaCita || '-'}`],
+        ['U — Kesadaran Mandiri', humanis.uKesadaranMandiri || humanis.uCatatanDiskusi || '-'],
+        ['M & A — Keteladanan & Apresiasi', `${humanis.mResponSiswa || '-'} | Apresiasi: ${humanis.aProgresDicapai || '-'}`],
+        ['N & I — Pembiasaan & Refleksi', `${humanis.nKebiasaanPositif || '-'} | Refleksi: ${humanis.iRefleksiSiswa || '-'}`],
+        ['S — Sinergi & Tindak Lanjut', `${humanis.sPeranOrangTua || '-'} | Tindak Lanjut: ${humanis.sTindakLanjut || '-'}`],
+      ],
+      theme: 'striped',
+      headStyles: { fillColor: [30, 41, 59] },
+      styles: { fontSize: 8, cellPadding: 2 },
+    });
+    nextY = lastY() + 7;
   }
 
   if (processes.length > 0) {
+    nextY = ensureSpace(32, nextY);
     autoTable(doc, {
       startY: nextY,
-      head: [['Tanggal', 'Tahap', 'Tindakan Pembinaan', 'Hasil Sementara']],
-      body: processes.slice(0, 6).map((p) => [p.tanggal, p.tahapHumanis, p.tindakan, p.hasilSementara]),
+      head: [['Tanggal', 'Tahap', 'Tindakan Pembinaan / Coaching', 'Hasil Sementara']],
+      body: processes.slice(0, 8).map((p) => [p.tanggal, p.tahapHumanis, p.tindakan, p.hasilSementara]),
       theme: 'grid',
       headStyles: { fillColor: [37, 99, 235] },
-      styles: { fontSize: 8 },
+      styles: { fontSize: 8, cellPadding: 2 },
     });
-  } else if (observations.length > 0) {
-    autoTable(doc, {
-      startY: nextY,
-      head: [['Tanggal', 'Kemandirian', 'Akademik', 'Emosional']],
-      body: observations.slice(0, 5).map((o) => [o.tanggal, o.tingkatKemandirian, o.kondisiAkademik, o.kondisiEmosional]),
-      theme: 'grid',
-      headStyles: { fillColor: [37, 99, 235] },
-      styles: { fontSize: 8 },
-    });
+    nextY = lastY() + 7;
   }
 
-  doc.save(`Laporan_HUMANIS_${student.namaLengkap.replace(/\s+/g, '_')}.pdf`);
+  if (statements.length > 0) {
+    nextY = ensureSpace(28, nextY);
+    autoTable(doc, {
+      startY: nextY,
+      head: [['Tanggal', 'Pernyataan Komitmen Baik Siswa']],
+      body: statements.slice(0, 6).map((st) => [st.tanggal, `"${st.kalimat}"`]),
+      theme: 'striped',
+      headStyles: { fillColor: [71, 85, 105] },
+      styles: { fontSize: 8, cellPadding: 2 },
+    });
+    nextY = lastY() + 7;
+  }
+
+  if (aiAnalysis) {
+    nextY = ensureSpace(45, nextY);
+    doc.setFontSize(10.5);
+    doc.setTextColor(15, 23, 42);
+    doc.text('Analisis Kondisi & Rekomendasi Tindakan (Guru Penggerak / AI)', 14, nextY);
+    nextY += 5;
+    doc.setFontSize(8.5);
+    doc.setTextColor(51, 65, 85);
+    const wrappedAnalysis = doc.splitTextToSize(aiAnalysis.analisisSiswa, 180);
+    doc.text(wrappedAnalysis, 14, nextY);
+    nextY += wrappedAnalysis.length * 4.2 + 3;
+    doc.setTextColor(15, 23, 42);
+    doc.text(`Prediksi Perkembangan: ${aiAnalysis.prediksiPerkembangan}`, 14, nextY);
+    nextY += 5;
+
+    if (aiAnalysis.saranTindakan.length > 0) {
+      autoTable(doc, {
+        startY: nextY,
+        head: [['No', 'Saran Tindakan Wali Kelas / Guru Penggerak']],
+        body: aiAnalysis.saranTindakan.map((s, idx) => [String(idx + 1), s]),
+        theme: 'grid',
+        headStyles: { fillColor: [5, 150, 105] },
+        styles: { fontSize: 8, cellPadding: 2 },
+      });
+      nextY = lastY() + 10;
+    }
+  }
+
+  // Signature block
+  nextY = ensureSpace(32, nextY);
+  doc.setFontSize(9);
+  doc.setTextColor(51, 65, 85);
+  doc.text('Mengetahui,', 20, nextY);
+  doc.text('Orang Tua / Wali Siswa', 20, nextY + 5);
+  doc.text(student.namaOrangTua || '________________________', 20, nextY + 22);
+
+  doc.text(`${schoolName}`, 130, nextY);
+  doc.text('Wali Kelas Pembina,', 130, nextY + 5);
+  doc.text(waliKelasName, 130, nextY + 22);
+
+  doc.save(`Laporan_Individu_HUMANIS_${student.namaLengkap.replace(/\s+/g, '_')}.pdf`);
 }
 
 export function exportClassReportToPDF(params: {
@@ -426,8 +569,9 @@ export function exportClassReportToPDF(params: {
   students: Student[];
   diagnostics: Diagnostic[];
   humanisList: HumanisProgress[];
+  periodLabel?: string;
 }) {
-  const { kelasFilter, students, diagnostics, humanisList } = params;
+  const { kelasFilter, students, diagnostics, humanisList, periodLabel = 'Semua Periode' } = params;
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
 
   doc.setFontSize(15);
@@ -435,13 +579,19 @@ export function exportClassReportToPDF(params: {
   doc.text(`LAPORAN KEMANDIRIAN KELAS — ${kelasFilter}`, 14, 18);
   doc.setFontSize(10);
   doc.setTextColor(71, 85, 105);
-  doc.text(`Total Siswa: ${students.length} · Dicetak: ${new Date().toLocaleDateString('id-ID')}`, 14, 24);
+  doc.text(
+    `Total Siswa: ${students.length} · Periode: ${periodLabel} · Dicetak: ${new Date().toLocaleDateString('id-ID')}`,
+    14,
+    24
+  );
 
   autoTable(doc, {
     startY: 30,
     head: [['No', 'NISN', 'Nama Lengkap', 'Kelas', 'Skor', 'Kategori', 'HUMANIS', 'Status']],
     body: students.map((s, idx) => {
-      const diag = diagnostics.find((d) => d.studentId === s.id);
+      const diag = diagnostics
+        .filter((d) => d.studentId === s.id)
+        .sort((a, b) => b.assessedDate.localeCompare(a.assessedDate))[0];
       const hum = humanisList.find((h) => h.studentId === s.id);
       const status =
         s.latestCondition === 'baik'

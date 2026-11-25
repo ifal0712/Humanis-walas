@@ -88,6 +88,7 @@ export interface Diagnostic {
   totalScore: number;
   category: IndependenceCategory;
   assessedDate: string;
+  periodMonths?: 0 | 3 | 6 | 12;
   notes?: string;
   createdAt?: unknown;
 }

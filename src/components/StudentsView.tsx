@@ -15,6 +15,7 @@ import {
   FileDown,
   ClipboardPaste,
   Table2,
+  FileText,
 } from 'lucide-react';
 import type { StaffRole, Student } from '../types/humanis';
 import { createStudent, deleteStudent, updateStudent } from '../lib/firestoreService';
@@ -34,6 +35,7 @@ interface StudentsViewProps {
   students: Student[];
   staffRole: StaffRole;
   onSelectForDiagnostic: (studentId: string) => void;
+  onViewReport?: (studentId: string) => void;
   onOpenGoogleSheets?: () => void;
 }
 
@@ -56,6 +58,7 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
   students,
   staffRole,
   onSelectForDiagnostic,
+  onViewReport,
   onOpenGoogleSheets,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
@@ -579,6 +582,17 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
                     </td>
                     <td className="py-3 px-4 text-right whitespace-nowrap">
                       <div className="inline-flex items-center gap-1.5">
+                        {onViewReport && (
+                          <button
+                            type="button"
+                            onClick={() => onViewReport(s.id)}
+                            title="Lihat & Cetak Laporan Kondisi Individu"
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 rounded-md transition-colors cursor-pointer"
+                          >
+                            <FileText className="w-3.5 h-3.5" />
+                            <span>Laporan</span>
+                          </button>
+                        )}
                         <button
                           type="button"
                           onClick={() => onSelectForDiagnostic(s.id)}

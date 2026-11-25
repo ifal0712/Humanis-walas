@@ -43,7 +43,7 @@ interface DashboardViewProps {
   staffRole: StaffRole;
   onSeedDemo: () => Promise<void>;
   seeding: boolean;
-  onNavigateStudent: (studentId: string, tab: 'humanis' | 'ai' | 'diagnostik') => void;
+  onNavigateStudent: (studentId: string, tab: 'humanis' | 'ai' | 'diagnostik' | 'laporan') => void;
   onNavigateMenu: (menu: string) => void;
 }
 
@@ -656,6 +656,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                       </td>
                       <td className="py-3 pl-3 text-right whitespace-nowrap">
                         <div className="inline-flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => onNavigateStudent(s.id, 'laporan')}
+                            className="text-xs font-medium text-emerald-600 dark:text-emerald-400 hover:underline cursor-pointer"
+                          >
+                            Laporan
+                          </button>
+                          <span className="text-slate-300 dark:text-slate-700">|</span>
                           <button
                             type="button"
                             onClick={() => onNavigateStudent(s.id, 'ai')}

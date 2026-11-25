@@ -386,6 +386,12 @@ export async function saveDiagnostic(
   ownerId: string,
   input: Omit<Diagnostic, 'id' | 'ownerId' | 'createdAt'>
 ): Promise<string> {
+  const allowedPeriods = [0, 3, 6, 12] as const;
+  const periodMonths =
+    typeof input.periodMonths === 'number' &&
+    (allowedPeriods as readonly number[]).includes(input.periodMonths)
+      ? input.periodMonths
+      : 0;
   const cleanPayload = {
     studentId: input.studentId,
     studentName: clip(input.studentName, 120),
@@ -398,6 +404,7 @@ export async function saveDiagnostic(
     totalScore: Number(input.totalScore),
     category: input.category,
     assessedDate: clip(input.assessedDate, 30),
+    periodMonths,
     notes: clip(input.notes, 500),
   };
   if (shouldUseServerWorkspace()) {

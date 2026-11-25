@@ -738,6 +738,10 @@ export default function App() {
               setSelectedStudentId(id);
               setActiveMenu('diagnostik');
             }}
+            onViewReport={(id) => {
+              setSelectedStudentId(id);
+              setActiveMenu('laporan');
+            }}
             onOpenGoogleSheets={() => setActiveMenu('spreadsheet')}
           />
         )}
@@ -750,6 +754,10 @@ export default function App() {
             selectedStudentId={selectedStudentId}
             onSelectStudent={setSelectedStudentId}
             staffRole={effectiveModuleRole}
+            onOpenStudentReport={(id) => {
+              setSelectedStudentId(id);
+              setActiveMenu('laporan');
+            }}
           />
         )}
 
@@ -827,6 +835,8 @@ export default function App() {
             selectedStudentId={selectedStudentId}
             onSelectStudent={setSelectedStudentId}
             onOpenGoogleSheets={() => setActiveMenu('spreadsheet')}
+            schoolName={theme.schoolName || 'SMK Negeri 1 Sidayu'}
+            waliKelasName={effectiveDisplayName}
           />
         )}
 

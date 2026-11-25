@@ -96,6 +96,7 @@
         "totalScore": { "type": "number" },
         "category": { "type": "string", "enum": ["Sangat Rendah", "Rendah", "Sedang", "Baik", "Sangat Baik"], "maxLength": 30 },
         "assessedDate": { "type": "string", "maxLength": 30 },
+        "periodMonths": { "type": "number", "description": "Rentang periodik penilaian dalam bulan (0 = awal, 3, 6, atau 12 bulan)." },
         "notes": { "type": "string", "maxLength": 500 },
         "createdAt": { "type": "string", "format": "date-time" }
       },
