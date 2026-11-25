@@ -26,8 +26,10 @@ import {
   updateUserProfile,
 } from './lib/firestoreService';
 import {
+  clearSavedStaffSession,
   exchangeFirebaseTokenForStaffToken,
   fetchStaffWorkspace,
+  getSavedStaffSession,
   onStaffWorkspaceMutated,
   setStaffAuthToken,
   type StaffWorkspaceSnapshot,
@@ -133,8 +135,10 @@ export default function App() {
   const pendingMetaRef = useRef<{ nip: string; role: StaffRole } | null>(null);
   const prevFirebaseUidRef = useRef<string | null>(null);
 
-  // Admin / Staff Credential Session (in-memory only, no localStorage Bearer tokens)
-  const [staffSession, setStaffSession] = useState<StaffSession | null>(null);
+  // Admin / Staff Credential Session (persisted in localStorage for static preview mode)
+  const [staffSession, setStaffSession] = useState<StaffSession | null>(() =>
+    getSavedStaffSession()
+  );
   const staffSessionRef = useRef<StaffSession | null>(null);
   staffSessionRef.current = staffSession;
   const [previewRole, setPreviewRole] = useState<StaffRole | null>(null);
@@ -328,6 +332,10 @@ export default function App() {
         })
         .catch((err) => {
           console.error('Gagal memuat ruang kerja staf:', err);
+          if (!cancelled) {
+            clearSavedStaffSession();
+            setStaffSession(null);
+          }
         });
     };
 
@@ -535,6 +543,7 @@ export default function App() {
     }
     setStaffSession(null);
     setPreviewRole(null);
+    clearSavedStaffSession();
     setStaffAuthToken(null);
     setStudentsLoaded(false);
     setStudents([]);

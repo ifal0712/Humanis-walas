@@ -8,45 +8,61 @@ import type {
   StudentPortalData,
   StudentSession,
 } from '../types/humanis';
-import { apiFetchJson } from './apiClient';
+import { ApiUnavailableError, apiFetchJson } from './apiClient';
 import { getStaffAuthToken } from './staffPortalService';
-
-// Keep Bearer tokens strictly in JS memory (never localStorage/sessionStorage)
-let inMemoryStudentSession: StudentSession | null = null;
+import {
+  getSavedLocalStudentSession,
+  isLocalStaffToken,
+  isLocalStudentToken,
+  localFetchStudentPortal,
+  localLoginStudent,
+  localRegisterStudent,
+  localSetStudentPortalCredentials,
+  localSubmitStudentAssessment,
+  localUpdateStudentBiodata,
+  saveLocalStudentSession,
+} from './localAuthStore';
 
 export function getSavedStudentSession(): StudentSession | null {
-  return inMemoryStudentSession;
+  return getSavedLocalStudentSession();
 }
 
 export function saveStudentSession(session: StudentSession | null): void {
-  inMemoryStudentSession = session;
+  saveLocalStudentSession(session);
 }
 
 export async function loginStudentAccount(
   username: string,
   password: string
 ): Promise<{ session: StudentSession; portal: StudentPortalData }> {
-  const data = await apiFetchJson<{
-    token: string;
-    username: string;
-    studentId: string;
-    portal: StudentPortalData;
-  }>(
-    '/api/student/login',
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, password }),
-    },
-    'Gagal masuk ke portal siswa.'
-  );
-  const session: StudentSession = {
-    token: data.token,
-    username: data.username,
-    studentId: data.studentId,
-  };
-  saveStudentSession(session);
-  return { session, portal: data.portal };
+  try {
+    const data = await apiFetchJson<{
+      token: string;
+      username: string;
+      studentId: string;
+      portal: StudentPortalData;
+    }>(
+      '/api/student/login',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password }),
+      },
+      'Gagal masuk ke portal siswa.'
+    );
+    const session: StudentSession = {
+      token: data.token,
+      username: data.username,
+      studentId: data.studentId,
+    };
+    saveStudentSession(session);
+    return { session, portal: data.portal };
+  } catch (err) {
+    if (err instanceof ApiUnavailableError) {
+      return localLoginStudent(username, password);
+    }
+    throw err;
+  }
 }
 
 export async function registerStudentAccount(payload: {
@@ -62,39 +78,56 @@ export async function registerStudentAccount(payload: {
   nomorOrangTua?: string;
   alamat?: string;
 }): Promise<{ session: StudentSession; portal: StudentPortalData }> {
-  const data = await apiFetchJson<{
-    token: string;
-    username: string;
-    studentId: string;
-    portal: StudentPortalData;
-  }>(
-    '/api/student/register',
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    },
-    'Gagal mendaftarkan akun siswa.'
-  );
-  const session: StudentSession = {
-    token: data.token,
-    username: data.username,
-    studentId: data.studentId,
-  };
-  saveStudentSession(session);
-  return { session, portal: data.portal };
+  try {
+    const data = await apiFetchJson<{
+      token: string;
+      username: string;
+      studentId: string;
+      portal: StudentPortalData;
+    }>(
+      '/api/student/register',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      },
+      'Gagal mendaftarkan akun siswa.'
+    );
+    const session: StudentSession = {
+      token: data.token,
+      username: data.username,
+      studentId: data.studentId,
+    };
+    saveStudentSession(session);
+    return { session, portal: data.portal };
+  } catch (err) {
+    if (err instanceof ApiUnavailableError) {
+      return localRegisterStudent(payload);
+    }
+    throw err;
+  }
 }
 
 export async function fetchStudentPortal(token: string): Promise<StudentPortalData> {
-  return apiFetchJson<StudentPortalData>(
-    '/api/student/portal',
-    {
-      headers: {
-        Authorization: `Bearer ${token}`,
+  if (isLocalStudentToken(token)) {
+    return localFetchStudentPortal(token);
+  }
+  try {
+    return await apiFetchJson<StudentPortalData>(
+      '/api/student/portal',
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
       },
-    },
-    'Gagal memuat data siswa.'
-  );
+      'Gagal memuat data siswa.'
+    );
+  } catch (err) {
+    if (err instanceof ApiUnavailableError) {
+      return localFetchStudentPortal(token);
+    }
+    throw err;
+  }
 }
 
 export async function submitStudentAssessment(
@@ -109,18 +142,28 @@ export async function submitStudentAssessment(
     pernyataanBaik?: string;
   }
 ): Promise<StudentPortalData> {
-  return apiFetchJson<StudentPortalData>(
-    '/api/student/assessment',
-    {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
+  if (isLocalStudentToken(token)) {
+    return localSubmitStudentAssessment(token, payload);
+  }
+  try {
+    return await apiFetchJson<StudentPortalData>(
+      '/api/student/assessment',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(payload),
       },
-      body: JSON.stringify(payload),
-    },
-    'Gagal menyimpan penilaian mandiri.'
-  );
+      'Gagal menyimpan penilaian mandiri.'
+    );
+  } catch (err) {
+    if (err instanceof ApiUnavailableError) {
+      return localSubmitStudentAssessment(token, payload);
+    }
+    throw err;
+  }
 }
 
 export async function updateStudentBiodata(
@@ -138,30 +181,40 @@ export async function updateStudentBiodata(
     newPassword?: string;
   }
 ): Promise<{ session: StudentSession; portal: StudentPortalData }> {
-  const data = await apiFetchJson<{
-    token: string;
-    username: string;
-    portal: StudentPortalData;
-  }>(
-    '/api/student/profile',
-    {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
+  if (isLocalStudentToken(token)) {
+    return localUpdateStudentBiodata(token, payload);
+  }
+  try {
+    const data = await apiFetchJson<{
+      token: string;
+      username: string;
+      portal: StudentPortalData;
+    }>(
+      '/api/student/profile',
+      {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(payload),
       },
-      body: JSON.stringify(payload),
-    },
-    'Gagal memperbarui biodata.'
-  );
-  const portal = data.portal;
-  const session: StudentSession = {
-    token: data.token,
-    username: data.username,
-    studentId: portal.student.id,
-  };
-  saveStudentSession(session);
-  return { session, portal };
+      'Gagal memperbarui biodata.'
+    );
+    const portal = data.portal;
+    const session: StudentSession = {
+      token: data.token,
+      username: data.username,
+      studentId: portal.student.id,
+    };
+    saveStudentSession(session);
+    return { session, portal };
+  } catch (err) {
+    if (err instanceof ApiUnavailableError) {
+      return localUpdateStudentBiodata(token, payload);
+    }
+    throw err;
+  }
 }
 
 function staffAuthHeaders(includeJson = true): Record<string, string> {
@@ -182,15 +235,28 @@ export async function setStudentPortalCredentials(payload: {
   password?: string;
   student?: Partial<Student>;
 }): Promise<void> {
-  await apiFetchJson<{ ok: boolean }>(
-    '/api/student/set-credentials',
-    {
-      method: 'POST',
-      headers: staffAuthHeaders(true),
-      body: JSON.stringify(payload),
-    },
-    'Gagal menyimpan kredensial login siswa.'
-  );
+  const staffToken = getStaffAuthToken();
+  if (isLocalStaffToken(staffToken)) {
+    localSetStudentPortalCredentials(payload);
+    return;
+  }
+  try {
+    await apiFetchJson<{ ok: boolean }>(
+      '/api/student/set-credentials',
+      {
+        method: 'POST',
+        headers: staffAuthHeaders(true),
+        body: JSON.stringify(payload),
+      },
+      'Gagal menyimpan kredensial login siswa.'
+    );
+  } catch (err) {
+    if (err instanceof ApiUnavailableError) {
+      localSetStudentPortalCredentials(payload);
+      return;
+    }
+    throw err;
+  }
 }
 
 export interface PendingStudentUpdates {
@@ -213,7 +279,7 @@ export interface PendingStudentUpdates {
 
 export async function fetchPendingStudentUpdates(): Promise<PendingStudentUpdates> {
   const token = getStaffAuthToken();
-  if (!token) {
+  if (!token || isLocalStaffToken(token)) {
     return { pendingRegistrations: [], pendingProfileUpdates: [], pendingAssessments: [] };
   }
   try {
@@ -232,7 +298,8 @@ export async function ackPendingStudentUpdates(payload: {
   processedProfileUpdateIds: string[];
   processedAssessmentIds: string[];
 }): Promise<void> {
-  if (!getStaffAuthToken()) return;
+  const token = getStaffAuthToken();
+  if (!token || isLocalStaffToken(token)) return;
   try {
     await apiFetchJson<{ ok: boolean }>('/api/student/ack-pending', {
       method: 'POST',
@@ -252,7 +319,8 @@ export async function syncStaffSnapshotToStudentPortal(payload: {
   processes: CoachingProcess[];
   statements: GoodStatement[];
 }): Promise<void> {
-  if (!getStaffAuthToken()) return;
+  const token = getStaffAuthToken();
+  if (!token || isLocalStaffToken(token)) return;
   try {
     await apiFetchJson<{ ok: boolean }>('/api/student/sync-from-staff', {
       method: 'POST',

@@ -65,19 +65,28 @@ export async function apiFetchJson<T>(
         return parsed as T;
       }
 
-      // Non-JSON body (e.g. proxy 404 "The page could not be found" or HTML during server restart)
+      // Static preview servers serve index.html (200 or 404) for /api/* — fail fast to trigger localStorage mode
+      const isStaticHtml = raw.trim().startsWith('<');
+      if (isStaticHtml && (res.status === 200 || res.status === 404)) {
+        throw new ApiUnavailableError('Mode pratinjau statis aktif.', res.status || 404);
+      }
+
+      // Non-JSON body (e.g. proxy 502/503/504 during server restart)
       if (TRANSIENT_STATUSES.has(res.status) && attempt < maxAttempts - 1) {
         await delay(600 * (attempt + 1));
         continue;
       }
 
       throw new ApiUnavailableError(
-        'Server backend login (/api) belum merespons pada alamat pratinjau ini. Pastikan server aktif, muat ulang halaman, atau gunakan Login dengan Google.',
+        'Server backend login (/api) belum merespons pada alamat pratinjau ini.',
         res.status || 404
       );
     } catch (err) {
       if (err instanceof ApiUnavailableError) {
         lastError = err;
+        if (err.message === 'Mode pratinjau statis aktif.') {
+          throw err;
+        }
         if (attempt < maxAttempts - 1) {
           await delay(600 * (attempt + 1));
           continue;
