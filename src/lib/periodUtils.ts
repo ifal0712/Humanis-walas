@@ -1,7 +1,7 @@
 import type { ConditionLevel } from '../types/humanis';
 
 export type AssessmentPeriodMonths = 0 | 3 | 6 | 12;
-export type ReportPeriodFilter = 'all' | 3 | 6 | 12;
+export type ReportPeriodFilter = 'all' | 0 | 3 | 6 | 12;
 
 export const ASSESSMENT_PERIOD_OPTIONS: Array<{
   value: AssessmentPeriodMonths;
@@ -41,6 +41,7 @@ export const REPORT_PERIOD_OPTIONS: Array<{
   shortLabel: string;
 }> = [
   { value: 'all', label: 'Semua Periode', shortLabel: 'Semua' },
+  { value: 0, label: 'Diagnostik Awal', shortLabel: 'Awal' },
   { value: 3, label: 'Rentang 3 Bulan', shortLabel: '3 Bulan' },
   { value: 6, label: 'Rentang 6 Bulan', shortLabel: '6 Bulan' },
   { value: 12, label: 'Rentang 12 Bulan', shortLabel: '12 Bulan' },
@@ -54,6 +55,7 @@ export function getAssessmentPeriodLabel(periodMonths?: number): string {
 }
 
 export function getReportPeriodLabel(rangeMonths: ReportPeriodFilter): string {
+  if (rangeMonths === 0) return 'Diagnostik Awal';
   if (rangeMonths === 3) return '3 Bulan Terakhir';
   if (rangeMonths === 6) return '6 Bulan Terakhir';
   if (rangeMonths === 12) return '12 Bulan Terakhir';
@@ -73,8 +75,6 @@ export function getCutoffDateISO(months: 3 | 6 | 12, referenceDate = new Date())
 
 /**
  * Filters records with a YYYY-MM-DD date field against the chosen rolling periodic window.
- * If periodMonths on a diagnostic item matches the requested period filter explicitly,
- * or its date falls within the last N months, it is included.
  */
 export function filterByPeriodWindow<T>(
   items: T[],
@@ -82,7 +82,7 @@ export function filterByPeriodWindow<T>(
   rangeMonths: ReportPeriodFilter,
   referenceDate = new Date()
 ): T[] {
-  if (rangeMonths === 'all') return items;
+  if (rangeMonths === 'all' || rangeMonths === 0) return items;
   const cutoff = getCutoffDateISO(rangeMonths, referenceDate);
   return items.filter((item) => {
     const d = (getDate(item) || '').slice(0, 10);

@@ -99,11 +99,13 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
     const periodDiags =
       periodFilter === 'all'
         ? allStudentDiags
-        : allStudentDiags.filter(
-            (d) =>
-              d.periodMonths === periodFilter ||
-              filterByPeriodWindow([d], (item) => item.assessedDate, periodFilter).length > 0
-          );
+        : periodFilter === 0
+          ? allStudentDiags.filter((d) => (d.periodMonths ?? 0) === 0)
+          : allStudentDiags.filter(
+              (d) =>
+                d.periodMonths === periodFilter ||
+                filterByPeriodWindow([d], (item) => item.assessedDate, periodFilter).length > 0
+            );
 
     const latestDiagnostic =
       periodDiags[periodDiags.length - 1] || allStudentDiags[allStudentDiags.length - 1];
@@ -111,8 +113,8 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
     const diagDelta =
       periodDiags.length >= 2
         ? periodDiags[periodDiags.length - 1].totalScore - periodDiags[0].totalScore
-        : allStudentDiags.length >= 2 && periodFilter === 'all'
-          ? allStudentDiags[allStudentDiags.length - 1].totalScore - allStudentDiags[0].totalScore
+        : allStudentDiags.length >= 2 && periodFilter !== 0
+          ? (latestDiagnostic?.totalScore ?? 0) - allStudentDiags[0].totalScore
           : null;
 
     const humanis = humanisList.find((h) => h.studentId === activeStudent.id);
@@ -163,13 +165,76 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
     () =>
       periodFilter === 'all'
         ? diagnostics
-        : diagnostics.filter(
-            (d) =>
-              d.periodMonths === periodFilter ||
-              filterByPeriodWindow([d], (item) => item.assessedDate, periodFilter).length > 0
-          ),
+        : periodFilter === 0
+          ? diagnostics.filter((d) => (d.periodMonths ?? 0) === 0)
+          : diagnostics.filter(
+              (d) =>
+                d.periodMonths === periodFilter ||
+                filterByPeriodWindow([d], (item) => item.assessedDate, periodFilter).length > 0
+            ),
     [diagnostics, periodFilter]
   );
+
+  const classProgressionRows = useMemo(() => {
+    return classStudents.map((s) => {
+      const allStudentDiags = diagnostics
+        .filter((d) => d.studentId === s.id)
+        .sort((a, b) => a.assessedDate.localeCompare(b.assessedDate));
+      const periodStudentDiags = classDiagnostics
+        .filter((d) => d.studentId === s.id)
+        .sort((a, b) => a.assessedDate.localeCompare(b.assessedDate));
+
+      const latestInPeriod =
+        periodStudentDiags[periodStudentDiags.length - 1] ||
+        allStudentDiags[allStudentDiags.length - 1];
+      const baseline = allStudentDiags[0];
+      const currentScore = latestInPeriod?.totalScore ?? s.latestScore ?? 0;
+      const baselineScore = baseline?.totalScore ?? currentScore;
+      const delta =
+        periodFilter === 0
+          ? null
+          : periodStudentDiags.length >= 2
+            ? periodStudentDiags[periodStudentDiags.length - 1].totalScore -
+              periodStudentDiags[0].totalScore
+            : allStudentDiags.length >= 2 && latestInPeriod && baseline && latestInPeriod.id !== baseline.id
+              ? latestInPeriod.totalScore - baseline.totalScore
+              : null;
+      const hum = humanisList.find((h) => h.studentId === s.id);
+      return {
+        student: s,
+        latestDiag: latestInPeriod,
+        baselineScore,
+        currentScore,
+        delta,
+        humStages: hum?.completedStages.length ?? 0,
+      };
+    });
+  }, [classStudents, diagnostics, classDiagnostics, humanisList, periodFilter]);
+
+  const classStats = useMemo(() => {
+    const count = classProgressionRows.length;
+    const avgScore =
+      count > 0
+        ? Math.round(
+            classProgressionRows.reduce((acc, r) => acc + r.currentScore, 0) / count
+          )
+        : 0;
+    const improvedCount = classProgressionRows.filter(
+      (r) => typeof r.delta === 'number' && r.delta > 0
+    ).length;
+    const priorityCount = classStudents.filter(
+      (s) => s.latestCondition === 'perlu_pendampingan' || (s.latestScore ?? 0) < 55
+    ).length;
+    return {
+      count,
+      avgScore,
+      improvedCount,
+      priorityCount,
+      assessmentsCount: classDiagnostics.filter((d) =>
+        classStudents.some((s) => s.id === d.studentId)
+      ).length,
+    };
+  }, [classProgressionRows, classStudents, classDiagnostics]);
 
   const classPriority = useMemo(
     () =>
@@ -516,33 +581,52 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
               </dl>
             </div>
 
-            <div className="space-y-3">
-              <h3 className="font-display text-sm font-semibold text-slate-900 dark:text-white">
-                Grafik Perkembangan Observasi ({periodLabel})
-              </h3>
-              <div className="h-48 w-full">
-                {indivData.obs.length > 0 ? (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={indivData.obs}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#94a3b8" strokeOpacity={0.2} />
-                      <XAxis dataKey="tanggal" tick={{ fontSize: 10 }} />
-                      <YAxis domain={[0, 100]} tick={{ fontSize: 10 }} />
-                      <Tooltip />
-                      <Line
-                        type="monotone"
-                        dataKey="skorKemandirian"
-                        name="Skor Kemandirian"
-                        stroke="#2563EB"
-                        strokeWidth={2.5}
-                        dot={{ r: 3.5 }}
-                      />
-                    </LineChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <div className="h-full flex items-center justify-center text-xs text-slate-500 border border-dashed border-slate-200 dark:border-slate-800 rounded-xl">
-                    Belum ada data tren observasi pada rentang {periodLabel.toLowerCase()}.
-                  </div>
-                )}
+            <div className="space-y-4">
+              <div className="space-y-2.5">
+                <h3 className="font-display text-sm font-semibold text-slate-900 dark:text-white">
+                  Grafik Perkembangan Skor Penilaian &amp; Observasi ({periodLabel})
+                </h3>
+                <div className="h-48 w-full">
+                  {indivData.obs.length > 0 ? (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={indivData.obs}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#94a3b8" strokeOpacity={0.2} />
+                        <XAxis dataKey="tanggal" tick={{ fontSize: 10 }} />
+                        <YAxis domain={[0, 100]} tick={{ fontSize: 10 }} />
+                        <Tooltip />
+                        <Line
+                          type="monotone"
+                          dataKey="skorKemandirian"
+                          name="Skor Observasi"
+                          stroke="#2563EB"
+                          strokeWidth={2.5}
+                          dot={{ r: 3.5 }}
+                        />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  ) : indivData.periodDiags.length > 0 ? (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={indivData.periodDiags}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#94a3b8" strokeOpacity={0.2} />
+                        <XAxis dataKey="assessedDate" tick={{ fontSize: 10 }} />
+                        <YAxis domain={[0, 100]} tick={{ fontSize: 10 }} />
+                        <Tooltip />
+                        <Line
+                          type="monotone"
+                          dataKey="totalScore"
+                          name="Skor Penilaian"
+                          stroke="#2563EB"
+                          strokeWidth={2.5}
+                          dot={{ r: 3.5 }}
+                        />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <div className="h-full flex items-center justify-center text-xs text-slate-500 border border-dashed border-slate-200 dark:border-slate-800 rounded-xl">
+                      Belum ada data tren penilaian pada rentang {periodLabel.toLowerCase()}.
+                    </div>
+                  )}
+                </div>
               </div>
 
               {/* Latest Academic / Social / Emotional Snapshot */}
@@ -761,16 +845,46 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
 
       {reportTab === 'kelas' && (
         <div className="print-container bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 sm:p-8 space-y-6">
-          <div className="border-b border-slate-200 dark:border-slate-800 pb-4">
-            <p className="text-xs font-medium text-blue-600 dark:text-blue-400">
-              {schoolName} · Laporan Rekapitulasi Kelas HUMANIS SMK ({periodLabel})
-            </p>
-            <h2 className="font-display text-xl font-bold text-slate-900 dark:text-white">
-              {classFilter === 'Semua' ? 'Seluruh Kelas Binaan' : `Kelas ${classFilter}`}
-            </h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              Total {classStudents.length} siswa · {classPriority.length} siswa prioritas pembinaan
-            </p>
+          <div className="border-b border-slate-200 dark:border-slate-800 pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <p className="text-xs font-medium text-blue-600 dark:text-blue-400">
+                {schoolName} · Laporan Perkembangan Kelas HUMANIS SMK ({periodLabel})
+              </p>
+              <h2 className="font-display text-xl font-bold text-slate-900 dark:text-white">
+                {classFilter === 'Semua' ? 'Seluruh Kelas Binaan' : `Kelas ${classFilter}`}
+              </h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Total {classPriority.length > 0 ? `${classStudents.length} siswa · ${classPriority.length} siswa prioritas pembinaan` : `${classStudents.length} siswa`}
+              </p>
+            </div>
+          </div>
+
+          {/* Class Progression KPI Cards */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-950/60">
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">Rata-rata Skor ({periodLabel})</p>
+              <p className="font-display text-xl font-bold text-blue-600 dark:text-blue-400 tabular-nums mt-0.5">
+                {classStats.avgScore}/100
+              </p>
+            </div>
+            <div className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-950/60">
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">Siswa Mengalami Kenaikan</p>
+              <p className="font-display text-xl font-bold text-emerald-600 dark:text-emerald-400 tabular-nums mt-0.5">
+                {classStats.improvedCount} Siswa
+              </p>
+            </div>
+            <div className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-950/60">
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">Perlu Pendampingan</p>
+              <p className="font-display text-xl font-bold text-rose-600 dark:text-rose-400 tabular-nums mt-0.5">
+                {classStats.priorityCount} Siswa
+              </p>
+            </div>
+            <div className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-950/60">
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">Asesmen pada Periode</p>
+              <p className="font-display text-xl font-bold text-slate-900 dark:text-white tabular-nums mt-0.5">
+                {classStats.assessmentsCount} Data
+              </p>
+            </div>
           </div>
 
           <div className="overflow-x-auto">
@@ -781,6 +895,8 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
                   <th className="py-2.5 px-3 font-medium">Nama Siswa</th>
                   <th className="py-2.5 px-3 font-medium">Kelas</th>
                   <th className="py-2.5 px-3 font-medium text-right">Skor</th>
+                  <th className="py-2.5 px-3 font-medium text-right">Perkembangan</th>
+                  <th className="py-2.5 px-3 font-medium">Periode</th>
                   <th className="py-2.5 px-3 font-medium">Kategori</th>
                   <th className="py-2.5 px-3 font-medium text-right">HUMANIS</th>
                   <th className="py-2.5 px-3 font-medium">Status</th>
@@ -788,49 +904,61 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-xs sm:text-sm">
-                {classStudents.map((s) => {
-                  const diag = classDiagnostics
-                    .filter((d) => d.studentId === s.id)
-                    .sort((a, b) => b.assessedDate.localeCompare(a.assessedDate))[0];
-                  const hum = humanisList.find((h) => h.studentId === s.id);
-                  return (
-                    <tr key={s.id}>
-                      <td className="py-2.5 pr-3 font-mono text-xs tabular-nums">{s.nisn}</td>
-                      <td className="py-2.5 px-3 font-medium text-slate-900 dark:text-white">
-                        {s.namaLengkap}
-                      </td>
-                      <td className="py-2.5 px-3 text-slate-600 dark:text-slate-300">{s.kelas}</td>
-                      <td className="py-2.5 px-3 text-right font-mono tabular-nums">
-                        {diag?.totalScore ?? s.latestScore ?? 0}
-                      </td>
-                      <td className="py-2.5 px-3 text-slate-600 dark:text-slate-300">
-                        {diag?.category ?? s.latestCategory ?? '-'}
-                      </td>
-                      <td className="py-2.5 px-3 text-right font-mono tabular-nums">
-                        {hum?.completedStages.length ?? 0}/7
-                      </td>
-                      <td className="py-2.5 px-3">
-                        {s.latestCondition === 'perlu_pendampingan'
-                          ? 'Prioritas Pembinaan'
-                          : s.latestCondition === 'baik'
-                            ? 'Baik'
-                            : 'Cukup'}
-                      </td>
-                      <td className="py-2.5 pl-3 text-right no-print">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            onSelectStudent(s.id);
-                            setReportTab('individu');
-                          }}
-                          className="text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
-                        >
-                          Lihat Individu
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
+                {classProgressionRows.map(({ student: s, latestDiag, currentScore, delta, humStages }) => (
+                  <tr key={s.id}>
+                    <td className="py-2.5 pr-3 font-mono text-xs tabular-nums">{s.nisn}</td>
+                    <td className="py-2.5 px-3 font-medium text-slate-900 dark:text-white">
+                      {s.namaLengkap}
+                    </td>
+                    <td className="py-2.5 px-3 text-slate-600 dark:text-slate-300">{s.kelas}</td>
+                    <td className="py-2.5 px-3 text-right font-mono font-semibold tabular-nums">
+                      {currentScore}
+                    </td>
+                    <td className="py-2.5 px-3 text-right font-mono text-xs tabular-nums whitespace-nowrap">
+                      {delta === null ? (
+                        <span className="text-slate-400">—</span>
+                      ) : delta > 0 ? (
+                        <span className="text-emerald-600 dark:text-emerald-400 font-semibold">
+                          +{delta} poin
+                        </span>
+                      ) : delta < 0 ? (
+                        <span className="text-rose-600 dark:text-rose-400 font-semibold">
+                          {delta} poin
+                        </span>
+                      ) : (
+                        <span className="text-slate-500">Stabil</span>
+                      )}
+                    </td>
+                    <td className="py-2.5 px-3 text-xs text-blue-600 dark:text-blue-400 whitespace-nowrap">
+                      {latestDiag ? getAssessmentPeriodLabel(latestDiag.periodMonths) : '-'}
+                    </td>
+                    <td className="py-2.5 px-3 text-slate-600 dark:text-slate-300">
+                      {latestDiag?.category ?? s.latestCategory ?? '-'}
+                    </td>
+                    <td className="py-2.5 px-3 text-right font-mono tabular-nums">
+                      {humStages}/7
+                    </td>
+                    <td className="py-2.5 px-3 whitespace-nowrap">
+                      {s.latestCondition === 'perlu_pendampingan'
+                        ? 'Prioritas Pembinaan'
+                        : s.latestCondition === 'baik'
+                          ? 'Baik'
+                          : 'Cukup'}
+                    </td>
+                    <td className="py-2.5 pl-3 text-right no-print whitespace-nowrap">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onSelectStudent(s.id);
+                          setReportTab('individu');
+                        }}
+                        className="text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
+                      >
+                        Lihat Individu
+                      </button>
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>

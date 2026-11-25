@@ -177,6 +177,9 @@ export const DiagnosticView: React.FC<DiagnosticViewProps> = ({
 
   const filteredDiagnostics = useMemo(() => {
     if (historyFilter === 'all') return studentDiagnostics;
+    if (historyFilter === 0) {
+      return studentDiagnostics.filter((d) => (d.periodMonths ?? 0) === 0);
+    }
     const byDate = filterByPeriodWindow(
       studentDiagnostics,
       (d) => d.assessedDate,

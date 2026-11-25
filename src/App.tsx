@@ -12,6 +12,7 @@ import {
   Menu,
   PanelLeftClose,
   PanelLeftOpen,
+  FileBarChart2,
 } from 'lucide-react';
 import { auth } from './lib/firebase';
 import {
@@ -629,7 +630,7 @@ export default function App() {
     );
   }
 
-  // Static Bottom Navbar items (Centered 4 core items with larger icons)
+  // Static Bottom Navbar items (Centered 5 core items with larger icons)
   const bottomNavItems: Array<{
     id: AppMenuKey;
     label: string;
@@ -639,6 +640,7 @@ export default function App() {
     { id: 'siswa', label: 'Siswa', icon: Users },
     { id: 'rubrik', label: 'Penilaian', icon: ListChecks },
     { id: 'humanis', label: 'HUMANIS', icon: Compass },
+    { id: 'laporan', label: 'Laporan', icon: FileBarChart2 },
   ];
 
   return (
@@ -921,12 +923,12 @@ export default function App() {
         )}
         </main>
 
-        {/* Static Centered Bottom Navigation Bar (Dashboard, Siswa, Penilaian, HUMANIS - Larger Icons) */}
+        {/* Static Centered Bottom Navigation Bar (Dashboard, Siswa, Penilaian, HUMANIS, Laporan - Larger Icons) */}
         <nav
           aria-label="Navigasi Utama Bawah"
           className="no-print sticky bottom-0 z-30 mt-auto bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-200 dark:border-slate-800"
         >
-          <div className="max-w-lg mx-auto h-[74px] flex items-center justify-center gap-2 sm:gap-6 px-3">
+          <div className="max-w-xl mx-auto h-[74px] flex items-center justify-center gap-1 sm:gap-4 px-2 sm:px-4">
             {bottomNavItems.map((item) => {
               const Icon = item.icon;
               const active = activeMenu === item.id;
@@ -935,20 +937,20 @@ export default function App() {
                   key={item.id}
                   type="button"
                   onClick={() => setActiveMenu(item.id)}
-                  className={`flex-1 max-w-[108px] h-full min-h-[48px] flex flex-col items-center justify-center gap-1 px-1 transition-colors cursor-pointer ${
+                  className={`flex-1 max-w-[104px] h-full min-h-[48px] flex flex-col items-center justify-center gap-1 px-0.5 transition-colors cursor-pointer ${
                     active
                       ? 'brand-text font-semibold'
                       : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
                   }`}
                 >
                   <div
-                    className={`px-3.5 py-1.5 rounded-2xl transition-colors ${
+                    className={`px-3 sm:px-3.5 py-1.5 rounded-2xl transition-colors ${
                       active ? 'brand-soft-bg' : ''
                     }`}
                   >
                     <Icon className="w-6 h-6 sm:w-7 sm:h-7" />
                   </div>
-                  <span className="text-[11px] sm:text-xs leading-none whitespace-nowrap">
+                  <span className="text-[10px] sm:text-xs leading-none whitespace-nowrap">
                     {item.label}
                   </span>
                 </button>

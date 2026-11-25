@@ -269,7 +269,7 @@ export const ObservationsView: React.FC<ObservationsViewProps> = ({
                 </p>
               </div>
               <div className="flex items-center gap-1 p-0.5 bg-slate-100 dark:bg-slate-800 rounded-lg self-start sm:self-auto">
-                {REPORT_PERIOD_OPTIONS.map((opt) => (
+                {REPORT_PERIOD_OPTIONS.filter((opt) => opt.value !== 0).map((opt) => (
                   <button
                     key={String(opt.value)}
                     type="button"
