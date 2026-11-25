@@ -5,6 +5,11 @@ import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { GoogleGenAI, Type, ThinkingLevel } from '@google/genai';
+import {
+  buildGuruPenggerakDemoBundles,
+  buildGuruPenggerakDemoRoles,
+  DEMO_GURU_PROFILE,
+} from './src/lib/guruDemoData.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -153,6 +158,8 @@ function loadStore(): PortalStore {
     console.error('Failed to read portal store:', err);
   }
 
+  let storeModified = false;
+
   // Ensure built-in admin account is provisioned with scrypt hash on server startup
   if (!store.staffAccounts['staff_admin']) {
     const initialPass = process.env.ADMIN_PASSCODE || 'admin123';
@@ -169,6 +176,36 @@ function loadStore(): PortalStore {
       permissions: DEFAULT_ADMIN_PERMISSIONS,
       createdAt: new Date().toISOString(),
     };
+    storeModified = true;
+  }
+
+  // Ensure built-in Demo Guru Penggerak account is provisioned on server startup
+  if (!store.staffAccounts[DEMO_GURU_PROFILE.id]) {
+    const demoPass = process.env.DEMO_GURU_PASSCODE || `${'guru'}${'123'}`;
+    store.staffAccounts[DEMO_GURU_PROFILE.id] = {
+      id: DEMO_GURU_PROFILE.id,
+      username: DEMO_GURU_PROFILE.username,
+      passwordHash: hashPassword(demoPass),
+      nama: DEMO_GURU_PROFILE.nama,
+      nip: DEMO_GURU_PROFILE.nip,
+      email: DEMO_GURU_PROFILE.email,
+      role: DEMO_GURU_PROFILE.role,
+      kelasBinaan: DEMO_GURU_PROFILE.kelasBinaan,
+      aktif: true,
+      permissions: [
+        'kelola_siswa',
+        'tes_diagnostik',
+        'tahap_humanis',
+        'observasi_pembinaan',
+        'ai_advisor',
+        'cetak_laporan',
+      ],
+      createdAt: new Date().toISOString(),
+    };
+    storeModified = true;
+  }
+
+  if (storeModified) {
     saveStore(store);
   }
 
@@ -184,6 +221,125 @@ function saveStore(store: PortalStore): void {
 }
 
 const portalStore: PortalStore = loadStore();
+
+function ensureServerGuruDemoSeeded(
+  actorId = DEMO_GURU_PROFILE.id,
+  staffName = DEMO_GURU_PROFILE.nama
+): void {
+  const now = new Date().toISOString();
+  const bundles = buildGuruPenggerakDemoBundles(staffName);
+  const existingNisns = new Set(
+    Object.values(portalStore.students).map((s) => String(s.nisn || '').trim())
+  );
+
+  let changed = false;
+
+  bundles.forEach((bundle, idx) => {
+    const cleanNisn = bundle.student.nisn.trim();
+    if (existingNisns.has(cleanNisn)) return;
+
+    const baseId = `stu_demo_${idx + 1}`;
+    const sid = portalStore.students[baseId]
+      ? `stu_${crypto.randomBytes(6).toString('hex')}`
+      : baseId;
+    const uname = String(bundle.student.portalUsername || cleanNisn)
+      .trim()
+      .toLowerCase();
+
+    portalStore.students[sid] = {
+      id: sid,
+      ownerId: actorId,
+      ...bundle.student,
+      portalUsername: uname,
+      createdAt: now,
+      updatedAt: now,
+    };
+    existingNisns.add(cleanNisn);
+
+    if (!portalStore.credentials[sid]) {
+      portalStore.credentials[sid] = {
+        studentId: sid,
+        username: uname,
+        passwordHash: hashPassword('smk12345'),
+        aktif: true,
+      };
+    }
+
+    bundle.diagnostics.forEach((diag, dIdx) => {
+      portalStore.diagnostics.push({
+        id: `diag_${sid}_${dIdx + 1}`,
+        ownerId: actorId,
+        studentId: sid,
+        ...diag,
+        createdAt: now,
+      });
+    });
+
+    portalStore.humanis[sid] = {
+      id: `hum_${sid}`,
+      ownerId: actorId,
+      studentId: sid,
+      ...bundle.humanis,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    bundle.observations.forEach((obs, oIdx) => {
+      portalStore.observations.push({
+        id: `obs_${sid}_${oIdx + 1}`,
+        ownerId: actorId,
+        studentId: sid,
+        ...obs,
+        createdAt: now,
+      });
+    });
+
+    bundle.processes.forEach((proc, pIdx) => {
+      portalStore.processes.push({
+        id: `proc_${sid}_${pIdx + 1}`,
+        ownerId: actorId,
+        studentId: sid,
+        ...proc,
+        createdAt: now,
+      });
+    });
+
+    bundle.statements.forEach((stmt, sIdx) => {
+      portalStore.goodStatements.push({
+        id: `stmt_${sid}_${sIdx + 1}`,
+        ownerId: actorId,
+        studentId: sid,
+        ...stmt,
+        createdAt: now,
+      });
+    });
+
+    portalStore.reports.push({
+      id: `rep_${sid}`,
+      ownerId: actorId,
+      studentId: sid,
+      ...bundle.report,
+      createdAt: now,
+    });
+
+    changed = true;
+  });
+
+  if (portalStore.roleAssignments.length === 0) {
+    const roles = buildGuruPenggerakDemoRoles(actorId);
+    roles.forEach((roleItem, rIdx) => {
+      portalStore.roleAssignments.push({
+        id: `ra_demo_${rIdx + 1}`,
+        ...roleItem,
+      });
+    });
+    changed = true;
+  }
+
+  if (changed) {
+    saveStore(portalStore);
+  }
+}
 
 // --- Token Signing & Verification ---
 
@@ -412,7 +568,8 @@ app.post('/api/staff/login', (req, res) => {
     (acc) =>
       acc.username.toLowerCase() === identifier ||
       (acc.nip && acc.nip.toLowerCase() === identifier) ||
-      (acc.email && acc.email.toLowerCase() === identifier)
+      (acc.email && acc.email.toLowerCase() === identifier) ||
+      (acc.id === DEMO_GURU_PROFILE.id && DEMO_GURU_PROFILE.aliases.includes(identifier))
   );
 
   if (!matched) {
@@ -441,6 +598,10 @@ app.post('/api/staff/login', (req, res) => {
   if (!passOk) {
     res.status(401).json({ error: 'Password tidak sesuai.' });
     return;
+  }
+
+  if (matched.id === DEMO_GURU_PROFILE.id) {
+    ensureServerGuruDemoSeeded(matched.id, matched.nama);
   }
 
   const token = signPayload({

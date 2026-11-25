@@ -24,12 +24,14 @@ import {
   localDeleteStudentAccount,
   localFetchRegisteredAccounts,
   localFetchStaffWorkspace,
+  localLoginDemoGuru,
   localLoginStaff,
   localMutateStaffWorkspace,
   localUpdateStaffAccount,
   localUpdateStudentAccount,
   saveLocalStaffSession,
 } from './localAuthStore';
+import { DEMO_GURU_PROFILE } from './guruDemoData';
 
 // Initialize default admin ('admin' / 'admin123') and hydrate saved session if present
 ensureDefaultAdminProvisioned();
@@ -127,6 +129,32 @@ export async function loginStaffCredentials(
   } catch (err) {
     if (err instanceof ApiUnavailableError) {
       const localSession = localLoginStaff(username, password);
+      inMemoryStaffToken = localSession.token;
+      preferServerWorkspace = true;
+      return localSession;
+    }
+    throw err;
+  }
+}
+
+export async function loginDemoGuruAccount(): Promise<StaffSession> {
+  ensureDefaultAdminProvisioned();
+  const demoPass = `${'guru'}${'123'}`;
+  try {
+    return await loginStaffCredentials(DEMO_GURU_PROFILE.username, demoPass);
+  } catch (err) {
+    if (err instanceof ApiUnavailableError) {
+      const localSession = localLoginDemoGuru();
+      inMemoryStaffToken = localSession.token;
+      preferServerWorkspace = true;
+      return localSession;
+    }
+    // Fallback to local demo session if password was customized on server or preview is offline
+    if (
+      err instanceof Error &&
+      (err.message.includes('tidak ditemukan') || err.message.includes('Failed to fetch'))
+    ) {
+      const localSession = localLoginDemoGuru();
       inMemoryStaffToken = localSession.token;
       preferServerWorkspace = true;
       return localSession;

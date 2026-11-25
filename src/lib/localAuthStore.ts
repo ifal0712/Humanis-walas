@@ -16,6 +16,11 @@ import type {
   StudentSession,
   ThemeSetting,
 } from '../types/humanis';
+import {
+  buildGuruPenggerakDemoBundles,
+  buildGuruPenggerakDemoRoles,
+  DEMO_GURU_PROFILE,
+} from './guruDemoData';
 
 const ACCOUNTS_STORAGE_KEY = 'humanis_local_accounts_v1';
 const WORKSPACE_STORAGE_KEY = 'humanis_local_workspace_v1';
@@ -254,6 +259,8 @@ function loadAccountsStore(): LocalAccountsStore {
         : {},
   };
 
+  let storeModified = false;
+
   if (!store.staffAccounts['staff_admin']) {
     const initialPass = `${'admin'}${'123'}`;
     store.staffAccounts['staff_admin'] = {
@@ -269,6 +276,35 @@ function loadAccountsStore(): LocalAccountsStore {
       permissions: [...DEFAULT_ADMIN_PERMISSIONS],
       createdAt: new Date().toISOString(),
     };
+    storeModified = true;
+  }
+
+  if (!store.staffAccounts[DEMO_GURU_PROFILE.id]) {
+    const demoPass = `${'guru'}${'123'}`;
+    store.staffAccounts[DEMO_GURU_PROFILE.id] = {
+      id: DEMO_GURU_PROFILE.id,
+      username: DEMO_GURU_PROFILE.username,
+      passwordHash: hashLocalPassword(demoPass),
+      nama: DEMO_GURU_PROFILE.nama,
+      nip: DEMO_GURU_PROFILE.nip,
+      email: DEMO_GURU_PROFILE.email,
+      role: DEMO_GURU_PROFILE.role,
+      kelasBinaan: DEMO_GURU_PROFILE.kelasBinaan,
+      aktif: true,
+      permissions: [
+        'kelola_siswa',
+        'tes_diagnostik',
+        'tahap_humanis',
+        'observasi_pembinaan',
+        'ai_advisor',
+        'cetak_laporan',
+      ],
+      createdAt: new Date().toISOString(),
+    };
+    storeModified = true;
+  }
+
+  if (storeModified) {
     safeWriteJson(ACCOUNTS_STORAGE_KEY, store);
   }
 
@@ -324,6 +360,134 @@ export function isLocalStudentToken(token: string | null | undefined): boolean {
   return Boolean(token && token.startsWith('local_stu_'));
 }
 
+export function ensureGuruDemoWorkspaceSeeded(
+  actorId = DEMO_GURU_PROFILE.id,
+  staffName = DEMO_GURU_PROFILE.nama
+): boolean {
+  const accounts = loadAccountsStore();
+  const workspace = loadWorkspaceStore();
+  const now = new Date().toISOString();
+  const bundles = buildGuruPenggerakDemoBundles(staffName);
+
+  const existingNisns = new Set(
+    Object.values(workspace.students).map((s) => String(s.nisn || '').trim())
+  );
+
+  let workspaceChanged = false;
+  let accountsChanged = false;
+
+  bundles.forEach((bundle, idx) => {
+    const cleanNisn = bundle.student.nisn.trim();
+    if (existingNisns.has(cleanNisn)) {
+      return;
+    }
+
+    const baseId = `stu_demo_${idx + 1}`;
+    const sid = workspace.students[baseId] ? `stu_${randomHex(8)}` : baseId;
+    const uname = String(bundle.student.portalUsername || cleanNisn)
+      .trim()
+      .toLowerCase();
+
+    workspace.students[sid] = {
+      id: sid,
+      ownerId: actorId,
+      ...bundle.student,
+      portalUsername: uname,
+      createdAt: now,
+      updatedAt: now,
+    };
+    existingNisns.add(cleanNisn);
+
+    if (!accounts.credentials[sid]) {
+      accounts.credentials[sid] = {
+        studentId: sid,
+        username: uname,
+        passwordHash: hashLocalPassword('smk12345'),
+        aktif: true,
+      };
+      accountsChanged = true;
+    }
+
+    bundle.diagnostics.forEach((diag, dIdx) => {
+      workspace.diagnostics.push({
+        id: `diag_${sid}_${dIdx + 1}`,
+        ownerId: actorId,
+        studentId: sid,
+        ...diag,
+        createdAt: now,
+      });
+    });
+
+    workspace.humanis[sid] = {
+      id: `hum_${sid}`,
+      ownerId: actorId,
+      studentId: sid,
+      ...bundle.humanis,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    bundle.observations.forEach((obs, oIdx) => {
+      workspace.observations.push({
+        id: `obs_${sid}_${oIdx + 1}`,
+        ownerId: actorId,
+        studentId: sid,
+        ...obs,
+        createdAt: now,
+      });
+    });
+
+    bundle.processes.forEach((proc, pIdx) => {
+      workspace.processes.push({
+        id: `proc_${sid}_${pIdx + 1}`,
+        ownerId: actorId,
+        studentId: sid,
+        ...proc,
+        createdAt: now,
+      });
+    });
+
+    bundle.statements.forEach((stmt, sIdx) => {
+      workspace.goodStatements.push({
+        id: `stmt_${sid}_${sIdx + 1}`,
+        ownerId: actorId,
+        studentId: sid,
+        ...stmt,
+        createdAt: now,
+      });
+    });
+
+    workspace.reports.push({
+      id: `rep_${sid}`,
+      ownerId: actorId,
+      studentId: sid,
+      ...bundle.report,
+      createdAt: now,
+    });
+
+    workspaceChanged = true;
+  });
+
+  if (workspace.roleAssignments.length === 0) {
+    const demoRoles = buildGuruPenggerakDemoRoles(actorId);
+    demoRoles.forEach((roleItem, rIdx) => {
+      workspace.roleAssignments.push({
+        id: `ra_demo_${rIdx + 1}`,
+        ...roleItem,
+      });
+    });
+    workspaceChanged = true;
+  }
+
+  if (workspaceChanged) {
+    saveWorkspaceStore(workspace);
+  }
+  if (accountsChanged) {
+    saveAccountsStore(accounts);
+  }
+  return workspaceChanged;
+}
+
 export function getSavedLocalStaffSession(): StaffSession | null {
   const session = safeReadJson<StaffSession>(STAFF_SESSION_STORAGE_KEY);
   if (!session || !session.id || !session.token) return null;
@@ -333,6 +497,9 @@ export function getSavedLocalStaffSession(): StaffSession | null {
     if (!acc || !acc.aktif) {
       safeWriteJson(STAFF_SESSION_STORAGE_KEY, null);
       return null;
+    }
+    if (acc.id === DEMO_GURU_PROFILE.id) {
+      ensureGuruDemoWorkspaceSeeded(acc.id, acc.nama);
     }
   }
   return session;
@@ -485,7 +652,8 @@ export function localLoginStaff(usernameInput: string, passwordInput: string): S
     (acc) =>
       acc.username.toLowerCase() === identifier ||
       (acc.nip && acc.nip.toLowerCase() === identifier) ||
-      (acc.email && acc.email.toLowerCase() === identifier)
+      (acc.email && acc.email.toLowerCase() === identifier) ||
+      (acc.id === DEMO_GURU_PROFILE.id && DEMO_GURU_PROFILE.aliases.includes(identifier))
   );
 
   if (!matched) {
@@ -500,6 +668,10 @@ export function localLoginStaff(usernameInput: string, passwordInput: string): S
     throw new Error('Password tidak sesuai.');
   }
 
+  if (matched.id === DEMO_GURU_PROFILE.id) {
+    ensureGuruDemoWorkspaceSeeded(matched.id, matched.nama);
+  }
+
   const session: StaffSession = {
     token: `local_staff_${matched.id}_${randomHex(8)}`,
     id: matched.id,
@@ -510,6 +682,26 @@ export function localLoginStaff(usernameInput: string, passwordInput: string): S
     staffRole: matched.role,
   };
 
+  saveLocalStaffSession(session);
+  return session;
+}
+
+export function localLoginDemoGuru(): StaffSession {
+  const accounts = loadAccountsStore();
+  const demoAcc = accounts.staffAccounts[DEMO_GURU_PROFILE.id];
+  if (!demoAcc || !demoAcc.aktif) {
+    throw new Error('Akun Demo Guru sedang dinonaktifkan oleh Admin.');
+  }
+  ensureGuruDemoWorkspaceSeeded(demoAcc.id, demoAcc.nama);
+  const session: StaffSession = {
+    token: `local_staff_${demoAcc.id}_${randomHex(8)}`,
+    id: demoAcc.id,
+    username: demoAcc.username,
+    displayName: demoAcc.nama,
+    email: demoAcc.email || DEMO_GURU_PROFILE.email,
+    nip: demoAcc.nip || DEMO_GURU_PROFILE.nip,
+    staffRole: demoAcc.role,
+  };
   saveLocalStaffSession(session);
   return session;
 }
