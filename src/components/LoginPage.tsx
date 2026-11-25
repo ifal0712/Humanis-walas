@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { GoogleAuthProvider, signInWithPopup, signInWithRedirect } from 'firebase/auth';
+import { GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
 import { auth, googleProvider } from '../lib/firebase';
 import { setWorkspaceAccessToken } from '../lib/googleWorkspaceService';
 import {
@@ -137,18 +137,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({
         setWorkspaceAccessToken(cred.accessToken, result.user.email);
       }
     } catch (err) {
-      const code = (err as { code?: string })?.code || '';
-      if (code === 'auth/popup-blocked') {
-        try {
-          // If popup is blocked outside nested iframe, attempt redirect sign-in
-          if (window.self === window.top) {
-            await signInWithRedirect(auth, googleProvider);
-            return;
-          }
-        } catch {
-          // fall through to user-friendly error message
-        }
-      }
       setErrorMsg(formatGoogleAuthError(err));
     } finally {
       setLoading(false);

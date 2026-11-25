@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { getRedirectResult, onAuthStateChanged, signOut, type User } from 'firebase/auth';
+import { onAuthStateChanged, signOut, type User } from 'firebase/auth';
 import {
   LayoutGrid,
   LayoutDashboard,
@@ -130,9 +130,7 @@ export default function App() {
   const [authReady, setAuthReady] = useState(false);
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [pendingMeta, setPendingMeta] = useState<{ nip: string; role: StaffRole } | null>(null);
   const pendingMetaRef = useRef<{ nip: string; role: StaffRole } | null>(null);
-  pendingMetaRef.current = pendingMeta;
   const prevFirebaseUidRef = useRef<string | null>(null);
 
   // Admin / Staff Credential Session (in-memory only, no localStorage Bearer tokens)
@@ -213,8 +211,6 @@ export default function App() {
 
   // Firebase Auth listener (registered once; uses refs to avoid mid-login listener teardown)
   useEffect(() => {
-    getRedirectResult(auth).catch(() => null);
-
     const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
       const previousUid = prevFirebaseUidRef.current;
       prevFirebaseUidRef.current = firebaseUser?.uid || null;
@@ -463,8 +459,12 @@ export default function App() {
   const effectiveUid = staffSession?.id || user?.uid || '';
   const effectiveDisplayName =
     staffSession?.displayName || profile?.displayName || user?.displayName || 'Pendidik SMK';
-  const effectiveNip = staffSession?.nip || profile?.nip;
-  const baseStaffRole: StaffRole = staffSession?.staffRole || profile?.staffRole || 'wali_kelas';
+  const effectiveNip = staffSession?.nip || profile?.nip || pendingMetaRef.current?.nip;
+  const baseStaffRole: StaffRole =
+    staffSession?.staffRole ||
+    profile?.staffRole ||
+    (isEmailAdmin ? 'admin' : pendingMetaRef.current?.role) ||
+    'wali_kelas';
   const staffRole: StaffRole = previewRole || baseStaffRole;
   const isAdminCapable = isEmailAdmin || baseStaffRole === 'admin';
 
@@ -589,7 +589,9 @@ export default function App() {
         onToggleDark={() =>
           setTheme((prev) => ({ ...prev, mode: prev.mode === 'dark' ? 'light' : 'dark' }))
         }
-        onSavePendingMeta={(meta) => setPendingMeta(meta)}
+        onSavePendingMeta={(meta) => {
+          pendingMetaRef.current = meta;
+        }}
         onStaffLoginSuccess={(sess) => {
           setStaffSession(sess);
           setPreviewRole(null);
