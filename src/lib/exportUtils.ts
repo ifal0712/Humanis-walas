@@ -33,44 +33,266 @@ export function exportStudentsToExcel(students: Student[], filename = 'Data_Sisw
   XLSX.writeFile(workbook, filename);
 }
 
-export async function parseStudentsFromExcel(
+export interface ParsedStudentTemplateRow {
+  rowNumber: number;
+  nisn: string;
+  namaLengkap: string;
+  jenisKelamin: 'L' | 'P';
+  kelas: string;
+  jurusan: string;
+  noHp: string;
+  namaOrangTua: string;
+  nomorOrangTua: string;
+  alamat: string;
+  portalUsername: string;
+  portalPassword: string;
+  validationError?: string;
+}
+
+const TEMPLATE_HEADERS = [
+  'NISN',
+  'Nama Lengkap',
+  'Jenis Kelamin (L/P)',
+  'Kelas',
+  'Jurusan',
+  'No HP Siswa',
+  'Nama Orang Tua',
+  'Nomor HP Orang Tua',
+  'Alamat',
+  'Username Portal',
+  'Password Portal',
+];
+
+const TEMPLATE_SAMPLE_ROWS = [
+  [
+    '0085123001',
+    'Andi Wijaya',
+    'L',
+    'X TKJ 1',
+    'Teknik Komputer & Jaringan',
+    '081234560101',
+    'Hendro Wijaya',
+    '081234569101',
+    'Jl. Pendidikan No. 10, Sidayu',
+    '0085123001',
+    'smk12345',
+  ],
+  [
+    '0085123002',
+    'Rina Kusuma',
+    'P',
+    'XI RPL 1',
+    'Rekayasa Perangkat Lunak',
+    '081234560102',
+    'Siti Aminah',
+    '081234569102',
+    'Jl. Pemuda No. 24, Gresik',
+    'rina.kusuma',
+    'smk12345',
+  ],
+];
+
+export function downloadStudentTemplateExcel(
+  filename = 'Template_Tambah_Siswa_HUMANIS_SMK.xlsx'
+) {
+  const wsData = [TEMPLATE_HEADERS, ...TEMPLATE_SAMPLE_ROWS];
+  const worksheet = XLSX.utils.aoa_to_sheet(wsData);
+  worksheet['!cols'] = [
+    { wch: 14 },
+    { wch: 24 },
+    { wch: 20 },
+    { wch: 12 },
+    { wch: 28 },
+    { wch: 16 },
+    { wch: 22 },
+    { wch: 18 },
+    { wch: 30 },
+    { wch: 18 },
+    { wch: 16 },
+  ];
+
+  const guideData = [
+    ['Kolom', 'Wajib?', 'Keterangan Pengisian'],
+    ['NISN', 'Ya', 'Minimal 4 digit, maksimal 20 karakter (contoh: 0085123001).'],
+    ['Nama Lengkap', 'Ya', 'Minimal 2 karakter sesuai data induk sekolah.'],
+    ['Jenis Kelamin (L/P)', 'Ya', 'Isi L untuk Laki-laki atau P untuk Perempuan.'],
+    ['Kelas', 'Ya', 'Contoh: X TKJ 1, XI RPL 1, XII TKR 2.'],
+    ['Jurusan', 'Ya', 'Kompetensi keahlian (contoh: Teknik Komputer & Jaringan).'],
+    ['No HP Siswa', 'Opsional', 'Nomor WhatsApp/HP aktif siswa.'],
+    ['Nama Orang Tua', 'Opsional', 'Nama ayah, ibu, atau wali siswa.'],
+    ['Nomor HP Orang Tua', 'Opsional', 'Nomor HP/WhatsApp orang tua atau wali.'],
+    ['Alamat', 'Opsional', 'Alamat domisili siswa.'],
+    ['Username Portal', 'Opsional', 'Jika dikosongkan otomatis memakai NISN siswa.'],
+    ['Password Portal', 'Opsional', 'Minimal 4 karakter. Jika kosong otomatis diset "smk12345".'],
+  ];
+  const guideSheet = XLSX.utils.aoa_to_sheet(guideData);
+  guideSheet['!cols'] = [{ wch: 22 }, { wch: 10 }, { wch: 62 }];
+
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, 'Template Siswa');
+  XLSX.utils.book_append_sheet(workbook, guideSheet, 'Panduan Pengisian');
+  XLSX.writeFile(workbook, filename);
+}
+
+export function downloadStudentTemplateCsv(
+  filename = 'Template_Tambah_Siswa_HUMANIS_SMK.csv'
+) {
+  const escapeCsv = (val: string) => {
+    if (val.includes(',') || val.includes('"') || val.includes('\n')) {
+      return `"${val.replace(/"/g, '""')}"`;
+    }
+    return val;
+  };
+  const lines = [TEMPLATE_HEADERS, ...TEMPLATE_SAMPLE_ROWS].map((row) =>
+    row.map((cell) => escapeCsv(String(cell))).join(',')
+  );
+  const blob = new Blob(['\uFEFF' + lines.join('\n')], {
+    type: 'text/csv;charset=utf-8;',
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function normalizeRowObject(
+  row: Record<string, unknown>,
+  rowNumber: number
+): ParsedStudentTemplateRow | null {
+  const pick = (...keys: string[]): string => {
+    const entries = Object.entries(row);
+    for (const key of keys) {
+      const target = key.toLowerCase();
+      const found = entries.find(([k]) => k.trim().toLowerCase() === target);
+      if (found && found[1] !== undefined && found[1] !== null && String(found[1]).trim() !== '') {
+        return String(found[1]).trim();
+      }
+    }
+    for (const key of keys) {
+      const target = key.toLowerCase();
+      const found = entries.find(([k]) => k.trim().toLowerCase().includes(target));
+      if (found && found[1] !== undefined && found[1] !== null && String(found[1]).trim() !== '') {
+        return String(found[1]).trim();
+      }
+    }
+    return '';
+  };
+
+  const nisn = pick('NISN', 'nisn').slice(0, 20);
+  const namaLengkap = pick('Nama Lengkap', 'Nama Siswa', 'Nama', 'namaLengkap').slice(0, 120);
+  const jkRaw = pick('Jenis Kelamin (L/P)', 'Jenis Kelamin', 'L/P', 'JK', 'jenisKelamin').toUpperCase();
+  const jenisKelamin: 'L' | 'P' = jkRaw.startsWith('P') ? 'P' : 'L';
+  const kelas = (pick('Kelas', 'kelas') || 'X TKJ 1').slice(0, 40);
+  const jurusan = (pick('Jurusan', 'Kompetensi Keahlian', 'jurusan') || 'Teknik Komputer & Jaringan').slice(0, 80);
+  const noHp = pick('No HP Siswa', 'No HP', 'HP Siswa', 'noHp').slice(0, 30);
+  const namaOrangTua = pick('Nama Orang Tua', 'Orang Tua', 'Wali', 'namaOrangTua').slice(0, 120);
+  const nomorOrangTua = pick('Nomor HP Orang Tua', 'Nomor Orang Tua', 'No HP Orang Tua', 'nomorOrangTua').slice(0, 30);
+  const alamat = pick('Alamat', 'Alamat Domisili', 'alamat').slice(0, 300);
+  const rawUser = pick('Username Portal', 'Username', 'portalUsername');
+  const portalUsername = (rawUser || nisn).toLowerCase().replace(/\s+/g, '.').slice(0, 60);
+  const portalPassword = pick('Password Portal', 'Password', 'portalPassword').slice(0, 60);
+
+  if (!nisn && !namaLengkap) return null;
+
+  const errors: string[] = [];
+  if (nisn.length < 4) errors.push('NISN min. 4 karakter');
+  if (namaLengkap.length < 2) errors.push('Nama min. 2 karakter');
+  if (kelas.length < 2) errors.push('Kelas wajib diisi');
+  if (jurusan.length < 2) errors.push('Jurusan wajib diisi');
+  if (portalPassword && portalPassword.length < 4) errors.push('Password min. 4 karakter');
+
+  return {
+    rowNumber,
+    nisn,
+    namaLengkap,
+    jenisKelamin,
+    kelas,
+    jurusan,
+    noHp,
+    namaOrangTua,
+    nomorOrangTua,
+    alamat,
+    portalUsername,
+    portalPassword,
+    validationError: errors.length > 0 ? errors.join(', ') : undefined,
+  };
+}
+
+export async function parseStudentTemplateFile(
   file: File
-): Promise<Array<Omit<Student, 'id' | 'ownerId' | 'createdAt' | 'updatedAt'>>> {
+): Promise<ParsedStudentTemplateRow[]> {
   const buffer = await file.arrayBuffer();
   const workbook = XLSX.read(buffer, { type: 'array' });
   const sheetName = workbook.SheetNames[0];
   const sheet = workbook.Sheets[sheetName];
-  const rawRows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet);
+  const rawRows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: '' });
 
   return rawRows
-    .map((row) => {
-      const nisn = String(row['NISN'] ?? row['nisn'] ?? '').trim();
-      const nama = String(row['Nama Lengkap'] ?? row['Nama'] ?? row['namaLengkap'] ?? '').trim();
-      const jkRaw = String(row['Jenis Kelamin'] ?? row['JK'] ?? row['jenisKelamin'] ?? 'L')
-        .trim()
-        .toUpperCase();
-      const jenisKelamin: 'L' | 'P' = jkRaw.startsWith('P') ? 'P' : 'L';
-      const jurusan = String(row['Jurusan'] ?? row['jurusan'] ?? 'TKJ').trim();
-      const kelas = String(row['Kelas'] ?? row['kelas'] ?? 'X TKJ 1').trim();
+    .map((row, idx) => normalizeRowObject(row, idx + 2))
+    .filter((item): item is ParsedStudentTemplateRow => item !== null);
+}
 
-      if (!nisn || !nama) return null;
+export function parseStudentTemplateText(text: string): ParsedStudentTemplateRow[] {
+  const lines = text
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+  if (lines.length === 0) return [];
 
-      return {
-        nisn,
-        namaLengkap: nama,
-        jenisKelamin,
-        jurusan,
-        kelas,
-        noHp: String(row['No HP'] ?? row['noHp'] ?? '').trim(),
-        namaOrangTua: String(row['Nama Orang Tua'] ?? row['namaOrangTua'] ?? '').trim(),
-        nomorOrangTua: String(row['Nomor Orang Tua'] ?? row['nomorOrangTua'] ?? '').trim(),
-        alamat: String(row['Alamat'] ?? row['alamat'] ?? '').trim(),
-        latestScore: 0,
-        latestCategory: 'Sedang' as const,
-        latestCondition: 'cukup' as const,
-      };
+  const firstLine = lines[0];
+  const delimiter = firstLine.includes('\t')
+    ? '\t'
+    : firstLine.includes(';')
+      ? ';'
+      : ',';
+
+  const splitLine = (line: string) =>
+    line.split(delimiter).map((cell) => cell.trim().replace(/^"(.*)"$/, '$1').trim());
+
+  const firstCells = splitLine(lines[0]);
+  const looksLikeHeader = firstCells.some((c) => {
+    const lower = c.toLowerCase();
+    return lower === 'nisn' || lower.includes('nama lengkap') || lower === 'nama';
+  });
+
+  const headers = looksLikeHeader ? firstCells : TEMPLATE_HEADERS;
+  const dataLines = looksLikeHeader ? lines.slice(1) : lines;
+
+  return dataLines
+    .map((line, idx) => {
+      const cells = splitLine(line);
+      const rowObj: Record<string, unknown> = {};
+      headers.forEach((h, colIdx) => {
+        rowObj[h] = cells[colIdx] ?? '';
+      });
+      return normalizeRowObject(rowObj, idx + (looksLikeHeader ? 2 : 1));
     })
-    .filter((item): item is NonNullable<typeof item> => item !== null);
+    .filter((item): item is ParsedStudentTemplateRow => item !== null);
+}
+
+export async function parseStudentsFromExcel(
+  file: File
+): Promise<Array<Omit<Student, 'id' | 'ownerId' | 'createdAt' | 'updatedAt'>>> {
+  const rows = await parseStudentTemplateFile(file);
+  return rows
+    .filter((r) => !r.validationError)
+    .map((r) => ({
+      nisn: r.nisn,
+      namaLengkap: r.namaLengkap,
+      jenisKelamin: r.jenisKelamin,
+      jurusan: r.jurusan,
+      kelas: r.kelas,
+      noHp: r.noHp,
+      namaOrangTua: r.namaOrangTua,
+      nomorOrangTua: r.nomorOrangTua,
+      alamat: r.alamat,
+      portalUsername: r.portalUsername,
+      latestScore: 0,
+      latestCategory: 'Sedang' as const,
+      latestCondition: 'cukup' as const,
+    }));
 }
 
 export function exportClassReportToExcel(

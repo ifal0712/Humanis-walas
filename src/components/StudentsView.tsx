@@ -12,11 +12,22 @@ import {
   Loader2,
   UserPlus,
   FileSpreadsheet,
+  FileDown,
+  ClipboardPaste,
+  Table2,
 } from 'lucide-react';
 import type { StaffRole, Student } from '../types/humanis';
 import { createStudent, deleteStudent, updateStudent } from '../lib/firestoreService';
 import { setStudentPortalCredentials } from '../lib/studentPortalService';
-import { exportStudentsToExcel, parseStudentsFromExcel } from '../lib/exportUtils';
+import {
+  downloadStudentTemplateCsv,
+  downloadStudentTemplateExcel,
+  exportStudentsToExcel,
+  parseStudentsFromExcel,
+  parseStudentTemplateFile,
+  parseStudentTemplateText,
+  type ParsedStudentTemplateRow,
+} from '../lib/exportUtils';
 
 interface StudentsViewProps {
   ownerId: string;
@@ -57,6 +68,17 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
   const [deleteTarget, setDeleteTarget] = useState<Student | null>(null);
   const [feedback, setFeedback] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Template Import Modal State
+  const [templateModalOpen, setTemplateModalOpen] = useState(false);
+  const [templateInputMode, setTemplateInputMode] = useState<'file' | 'paste'>('file');
+  const [templatePasteText, setTemplatePasteText] = useState('');
+  const [templateFileName, setTemplateFileName] = useState('');
+  const [templateRows, setTemplateRows] = useState<ParsedStudentTemplateRow[]>([]);
+  const [skipDuplicateNisn, setSkipDuplicateNisn] = useState(true);
+  const [templateSaving, setTemplateSaving] = useState(false);
+  const [templateError, setTemplateError] = useState<string | null>(null);
+  const templateFileRef = useRef<HTMLInputElement | null>(null);
 
   const canEdit = staffRole === 'wali_kelas';
 
@@ -185,12 +207,24 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
         });
         return;
       }
-      for (const row of parsedRows) {
-        await createStudent(ownerId, row);
+      const existingNisn = new Set(students.map((s) => s.nisn.trim()));
+      const newRows = parsedRows.filter((row) => !existingNisn.has(row.nisn.trim()));
+      for (const row of newRows) {
+        const newId = await createStudent(ownerId, row);
+        await setStudentPortalCredentials({
+          studentId: newId,
+          username: (row.portalUsername || row.nisn).trim().toLowerCase(),
+          password: 'smk12345',
+          student: { id: newId, ownerId, ...row },
+        }).catch(() => {});
       }
+      const skipped = parsedRows.length - newRows.length;
       setFeedback({
         type: 'ok',
-        text: `${parsedRows.length} data siswa berhasil diimpor dari Excel ke Firestore.`,
+        text:
+          skipped > 0
+            ? `${newRows.length} data siswa berhasil diimpor (${skipped} NISN duplikat dilewati).`
+            : `${newRows.length} data siswa berhasil diimpor dari Excel.`,
       });
     } catch (err) {
       setFeedback({
@@ -200,6 +234,138 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
     } finally {
       setImporting(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const existingNisnSet = useMemo(
+    () => new Set(students.map((s) => s.nisn.trim())),
+    [students]
+  );
+
+  const analyzedTemplateRows = useMemo(() => {
+    const seenBatchNisn = new Set<string>();
+    return templateRows.map((row) => {
+      const cleanNisn = row.nisn.trim();
+      const isExistingDup = existingNisnSet.has(cleanNisn);
+      const isBatchDup = cleanNisn.length >= 4 && seenBatchNisn.has(cleanNisn);
+      if (cleanNisn) seenBatchNisn.add(cleanNisn);
+      const isDuplicate = isExistingDup || isBatchDup;
+      return {
+        ...row,
+        isDuplicate,
+        duplicateLabel: isExistingDup
+          ? 'NISN sudah ada'
+          : isBatchDup
+            ? 'Duplikat di template'
+            : undefined,
+      };
+    });
+  }, [templateRows, existingNisnSet]);
+
+  const validTemplateRowsToSave = useMemo(
+    () =>
+      analyzedTemplateRows.filter(
+        (r) => !r.validationError && (!skipDuplicateNisn || !r.isDuplicate)
+      ),
+    [analyzedTemplateRows, skipDuplicateNisn]
+  );
+
+  const openTemplateModal = () => {
+    setTemplateModalOpen(true);
+    setTemplateInputMode('file');
+    setTemplatePasteText('');
+    setTemplateFileName('');
+    setTemplateRows([]);
+    setTemplateError(null);
+    setSkipDuplicateNisn(true);
+  };
+
+  const handleTemplateFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setTemplateError(null);
+    setTemplateFileName(file.name);
+    try {
+      const parsed = await parseStudentTemplateFile(file);
+      if (parsed.length === 0) {
+        setTemplateError('File template tidak berisi baris data siswa.');
+        setTemplateRows([]);
+      } else {
+        setTemplateRows(parsed);
+      }
+    } catch (err) {
+      setTemplateError(err instanceof Error ? err.message : 'Gagal membaca file template.');
+      setTemplateRows([]);
+    } finally {
+      if (templateFileRef.current) templateFileRef.current.value = '';
+    }
+  };
+
+  const handleParseTemplatePaste = () => {
+    setTemplateError(null);
+    const parsed = parseStudentTemplateText(templatePasteText);
+    if (parsed.length === 0) {
+      setTemplateError(
+        'Data tempel kosong atau format tidak dikenali. Pastikan minimal terdapat NISN dan Nama Lengkap.'
+      );
+      setTemplateRows([]);
+      return;
+    }
+    setTemplateRows(parsed);
+  };
+
+  const handleConfirmTemplateImport = async () => {
+    if (validTemplateRowsToSave.length === 0) return;
+    setTemplateSaving(true);
+    setTemplateError(null);
+    try {
+      let savedCount = 0;
+      for (const row of validTemplateRowsToSave) {
+        const cleanUsername = (row.portalUsername || row.nisn)
+          .trim()
+          .toLowerCase()
+          .replace(/\s+/g, '.')
+          .slice(0, 60);
+        const studentPayload: Omit<Student, 'id' | 'ownerId' | 'createdAt' | 'updatedAt'> = {
+          nisn: row.nisn,
+          namaLengkap: row.namaLengkap,
+          jenisKelamin: row.jenisKelamin,
+          jurusan: row.jurusan,
+          kelas: row.kelas,
+          noHp: row.noHp,
+          namaOrangTua: row.namaOrangTua,
+          nomorOrangTua: row.nomorOrangTua,
+          alamat: row.alamat,
+          portalUsername: cleanUsername,
+          latestScore: 0,
+          latestCategory: 'Sedang',
+          latestCondition: 'cukup',
+        };
+        const newId = await createStudent(ownerId, studentPayload);
+        await setStudentPortalCredentials({
+          studentId: newId,
+          username: cleanUsername,
+          password: row.portalPassword.trim() || 'smk12345',
+          student: { id: newId, ownerId, ...studentPayload },
+        }).catch(() => {});
+        savedCount += 1;
+      }
+
+      const skippedCount = analyzedTemplateRows.length - savedCount;
+      setTemplateModalOpen(false);
+      setFeedback({
+        type: 'ok',
+        text:
+          skippedCount > 0
+            ? `${savedCount} siswa berhasil ditambahkan dari template (${skippedCount} baris dilewati).`
+            : `${savedCount} siswa berhasil ditambahkan dari template.`,
+      });
+    } catch (err) {
+      setTemplateError(
+        err instanceof Error ? err.message : 'Gagal menyimpan data siswa dari template.'
+      );
+    } finally {
+      setTemplateSaving(false);
     }
   };
 
@@ -264,14 +430,24 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
           )}
 
           {canEdit && (
-            <button
-              type="button"
-              onClick={openAddModal}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium transition-colors whitespace-nowrap shrink-0 cursor-pointer"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Tambah Siswa</span>
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={openTemplateModal}
+                className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/40 hover:bg-blue-100 dark:hover:bg-blue-950/70 text-blue-700 dark:text-blue-300 text-xs font-medium transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+              >
+                <Table2 className="w-4 h-4" />
+                <span>Tambah via Template</span>
+              </button>
+              <button
+                type="button"
+                onClick={openAddModal}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Tambah Siswa</span>
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -336,7 +512,7 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
             <UserPlus className="w-8 h-8 text-slate-400 mx-auto" />
             <p className="text-sm text-slate-600 dark:text-slate-400">
               {students.length === 0
-                ? 'Belum ada data siswa tersimpan. Klik "Tambah Siswa" atau "Import Excel" untuk memulai.'
+                ? 'Belum ada data siswa tersimpan. Klik "Tambah Siswa" atau "Tambah via Template" untuk memulai.'
                 : 'Tidak ada siswa yang sesuai dengan kata kunci pencarian.'}
             </p>
           </div>
@@ -659,6 +835,280 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
                 className="px-4 py-2 text-sm rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-medium cursor-pointer"
               >
                 {saving ? 'Menghapus...' : 'Ya, Hapus'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Template Import Modal */}
+      {templateModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 overflow-y-auto">
+          <div className="w-full max-w-4xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 space-y-5 my-8">
+            <div className="flex items-start justify-between gap-4 border-b border-slate-100 dark:border-slate-800 pb-4">
+              <div>
+                <h2 className="font-display text-lg font-bold text-slate-900 dark:text-white">
+                  Tambah Siswa dengan Template
+                </h2>
+                <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
+                  Unduh template resmi, isi daftar siswa secara massal, lalu unggah file atau
+                  tempel langsung baris tabel dari Excel / Google Sheets.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setTemplateModalOpen(false)}
+                aria-label="Tutup modal template"
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Step 1: Download Template */}
+            <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="space-y-0.5">
+                <p className="text-xs font-semibold text-slate-800 dark:text-slate-200">
+                  1. Unduh Template &amp; Panduan Pengisian
+                </p>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Kolom wajib: NISN, Nama Lengkap, L/P, Kelas, Jurusan. Username &amp; password
+                  portal siswa otomatis dibuatkan jika dikosongkan.
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => downloadStudentTemplateExcel()}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium transition-colors cursor-pointer whitespace-nowrap"
+                >
+                  <FileDown className="w-3.5 h-3.5" />
+                  <span>Template Excel (.xlsx)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => downloadStudentTemplateCsv()}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-medium transition-colors cursor-pointer whitespace-nowrap"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Template CSV</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Step 2: Input Source Mode Tabs */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <p className="text-xs font-semibold text-slate-800 dark:text-slate-200">
+                  2. Masukkan Data Siswa dari Template
+                </p>
+                <div className="grid grid-cols-2 gap-1 p-1 bg-slate-100 dark:bg-slate-800 rounded-lg">
+                  <button
+                    type="button"
+                    onClick={() => setTemplateInputMode('file')}
+                    className={`inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-colors cursor-pointer ${
+                      templateInputMode === 'file'
+                        ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-xs'
+                        : 'text-slate-600 dark:text-slate-400'
+                    }`}
+                  >
+                    <Upload className="w-3.5 h-3.5" />
+                    <span>Unggah File</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTemplateInputMode('paste')}
+                    className={`inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-colors cursor-pointer ${
+                      templateInputMode === 'paste'
+                        ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-xs'
+                        : 'text-slate-600 dark:text-slate-400'
+                    }`}
+                  >
+                    <ClipboardPaste className="w-3.5 h-3.5" />
+                    <span>Tempel dari Excel</span>
+                  </button>
+                </div>
+              </div>
+
+              {templateInputMode === 'file' ? (
+                <div className="border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-xl p-6 text-center space-y-2.5 bg-slate-50/50 dark:bg-slate-950/50">
+                  <input
+                    ref={templateFileRef}
+                    type="file"
+                    accept=".xlsx,.xls,.csv"
+                    onChange={handleTemplateFileChange}
+                    className="hidden"
+                  />
+                  <FileSpreadsheet className="w-8 h-8 text-blue-600 dark:text-blue-400 mx-auto" />
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium text-slate-800 dark:text-slate-200">
+                      {templateFileName
+                        ? `File dimuat: ${templateFileName}`
+                        : 'Pilih file template Excel (.xlsx / .xls) atau CSV'}
+                    </p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      Data akan diperiksa dan ditampilkan pada pratinjau sebelum disimpan.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => templateFileRef.current?.click()}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium transition-colors cursor-pointer"
+                  >
+                    <Upload className="w-3.5 h-3.5" />
+                    <span>{templateFileName ? 'Pilih File Lain' : 'Pilih File Template'}</span>
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-2.5">
+                  <textarea
+                    rows={5}
+                    value={templatePasteText}
+                    onChange={(e) => setTemplatePasteText(e.target.value)}
+                    placeholder={
+                      'Tempel (Ctrl+V) baris data dari Excel / Google Sheets (dengan atau tanpa baris header):\n0085123001\tAndi Wijaya\tL\tX TKJ 1\tTeknik Komputer & Jaringan\n0085123002\tRina Kusuma\tP\tXI RPL 1\tRekayasa Perangkat Lunak'
+                    }
+                    className="w-full px-3.5 py-2.5 text-xs font-mono rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-600"
+                  />
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      onClick={handleParseTemplatePaste}
+                      disabled={!templatePasteText.trim()}
+                      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-medium cursor-pointer"
+                    >
+                      <Table2 className="w-3.5 h-3.5" />
+                      <span>Proses Data Tempel</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {templateError && (
+              <div className="flex items-start gap-2.5 p-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-xs text-rose-800 dark:text-rose-200">
+                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                <span>{templateError}</span>
+              </div>
+            )}
+
+            {/* Step 3: Preview Table */}
+            {analyzedTemplateRows.length > 0 && (
+              <div className="space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div className="text-xs text-slate-700 dark:text-slate-300">
+                    Pratinjau: <strong className="tabular-nums">{analyzedTemplateRows.length}</strong>{' '}
+                    baris terbaca ·{' '}
+                    <span className="text-emerald-600 dark:text-emerald-400 font-semibold tabular-nums">
+                      {validTemplateRowsToSave.length} siap disimpan
+                    </span>
+                  </div>
+                  <label className="inline-flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={skipDuplicateNisn}
+                      onChange={(e) => setSkipDuplicateNisn(e.target.checked)}
+                      className="rounded border-slate-300 text-blue-600 focus:ring-blue-600"
+                    />
+                    <span>Lewati NISN duplikat secara otomatis</span>
+                  </label>
+                </div>
+
+                <div className="max-h-64 overflow-auto border border-slate-200 dark:border-slate-800 rounded-xl">
+                  <table className="w-full text-left border-collapse text-xs">
+                    <thead className="sticky top-0 bg-slate-50 dark:bg-slate-800 text-slate-500 dark:text-slate-300 border-b border-slate-200 dark:border-slate-700">
+                      <tr>
+                        <th className="py-2 px-3 font-medium">NISN</th>
+                        <th className="py-2 px-3 font-medium">Nama Lengkap</th>
+                        <th className="py-2 px-3 font-medium">L/P</th>
+                        <th className="py-2 px-3 font-medium">Kelas &amp; Jurusan</th>
+                        <th className="py-2 px-3 font-medium">Status</th>
+                        <th className="py-2 px-3 font-medium text-right">Hapus</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                      {analyzedTemplateRows.map((row, idx) => {
+                        const willSkip =
+                          Boolean(row.validationError) ||
+                          (skipDuplicateNisn && row.isDuplicate);
+                        return (
+                          <tr
+                            key={`${row.rowNumber}-${row.nisn}-${idx}`}
+                            className={
+                              willSkip
+                                ? 'bg-slate-50/70 dark:bg-slate-900/40 opacity-65'
+                                : 'bg-white dark:bg-slate-900'
+                            }
+                          >
+                            <td className="py-2 px-3 font-mono whitespace-nowrap">
+                              {row.nisn || '-'}
+                            </td>
+                            <td className="py-2 px-3 font-medium text-slate-900 dark:text-white">
+                              {row.namaLengkap || '-'}
+                            </td>
+                            <td className="py-2 px-3">{row.jenisKelamin}</td>
+                            <td className="py-2 px-3">
+                              <div>{row.kelas}</div>
+                              <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate max-w-[180px]">
+                                {row.jurusan}
+                              </div>
+                            </td>
+                            <td className="py-2 px-3 whitespace-nowrap">
+                              {row.validationError ? (
+                                <span className="text-rose-600 dark:text-rose-400 font-medium">
+                                  {row.validationError}
+                                </span>
+                              ) : row.isDuplicate ? (
+                                <span className="text-amber-600 dark:text-amber-400 font-medium">
+                                  {row.duplicateLabel}
+                                </span>
+                              ) : (
+                                <span className="text-emerald-600 dark:text-emerald-400 font-medium">
+                                  Siap disimpan
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-2 px-3 text-right">
+                              <button
+                                type="button"
+                                aria-label={`Hapus baris ${row.namaLengkap}`}
+                                onClick={() =>
+                                  setTemplateRows((prev) => prev.filter((_, i) => i !== idx))
+                                }
+                                className="p-1 rounded text-slate-400 hover:text-rose-600 cursor-pointer"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2.5 pt-3 border-t border-slate-100 dark:border-slate-800">
+              <button
+                type="button"
+                onClick={() => setTemplateModalOpen(false)}
+                className="px-4 py-2 text-sm rounded-lg border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                disabled={templateSaving || validTemplateRowsToSave.length === 0}
+                onClick={handleConfirmTemplateImport}
+                className="inline-flex items-center gap-2 px-5 py-2 text-sm rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-medium cursor-pointer"
+              >
+                {templateSaving && <Loader2 className="w-4 h-4 animate-spin" />}
+                <span>
+                  {templateSaving
+                    ? 'Menyimpan...'
+                    : `Simpan ${validTemplateRowsToSave.length} Siswa`}
+                </span>
               </button>
             </div>
           </div>
