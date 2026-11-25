@@ -1,5 +1,5 @@
-import { GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
-import { auth, googleProvider } from './firebase';
+import { GoogleAuthProvider, reauthenticateWithPopup, signInWithPopup } from 'firebase/auth';
+import { auth, googleWorkspaceProvider } from './firebase';
 import type {
   CoachingProcess,
   Diagnostic,
@@ -47,7 +47,21 @@ export async function connectGoogleWorkspace(): Promise<{
   email: string;
   displayName: string;
 }> {
-  const result = await signInWithPopup(auth, googleProvider);
+  let result;
+  if (auth.currentUser) {
+    try {
+      result = await reauthenticateWithPopup(auth.currentUser, googleWorkspaceProvider);
+    } catch (err) {
+      const code = (err as { code?: string })?.code || '';
+      if (code === 'auth/user-mismatch' || code === 'auth/no-current-user') {
+        result = await signInWithPopup(auth, googleWorkspaceProvider);
+      } else {
+        throw err;
+      }
+    }
+  } else {
+    result = await signInWithPopup(auth, googleWorkspaceProvider);
+  }
   const credential = GoogleAuthProvider.credentialFromResult(result);
   const accessToken = credential?.accessToken;
   if (!accessToken) {

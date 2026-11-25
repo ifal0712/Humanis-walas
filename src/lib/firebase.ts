@@ -14,7 +14,10 @@ export const auth = getAuth(app);
 
 export const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({ prompt: 'select_account' });
-WORKSPACE_SCOPES.forEach((scope) => googleProvider.addScope(scope));
+
+export const googleWorkspaceProvider = new GoogleAuthProvider();
+googleWorkspaceProvider.setCustomParameters({ prompt: 'consent select_account' });
+WORKSPACE_SCOPES.forEach((scope) => googleWorkspaceProvider.addScope(scope));
 
 export enum OperationType {
   CREATE = 'create',

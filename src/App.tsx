@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { onAuthStateChanged, signOut, type User } from 'firebase/auth';
+import { getRedirectResult, onAuthStateChanged, signOut, type User } from 'firebase/auth';
 import {
   LayoutGrid,
   LayoutDashboard,
@@ -131,6 +131,9 @@ export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [pendingMeta, setPendingMeta] = useState<{ nip: string; role: StaffRole } | null>(null);
+  const pendingMetaRef = useRef<{ nip: string; role: StaffRole } | null>(null);
+  pendingMetaRef.current = pendingMeta;
+  const prevFirebaseUidRef = useRef<string | null>(null);
 
   // Admin / Staff Credential Session (in-memory only, no localStorage Bearer tokens)
   const [staffSession, setStaffSession] = useState<StaffSession | null>(null);
@@ -208,9 +211,13 @@ export default function App() {
     }
   }, []);
 
-  // Firebase Auth listener
+  // Firebase Auth listener (registered once; uses refs to avoid mid-login listener teardown)
   useEffect(() => {
+    getRedirectResult(auth).catch(() => null);
+
     const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
+      const previousUid = prevFirebaseUidRef.current;
+      prevFirebaseUidRef.current = firebaseUser?.uid || null;
       setUser(firebaseUser);
       if (firebaseUser) {
         if (staffSessionRef.current) {
@@ -218,33 +225,36 @@ export default function App() {
           setAuthReady(true);
           return;
         }
-        setActiveMenu('home'); // Always start on the Grid Menu right after login
+        if (previousUid !== firebaseUser.uid) {
+          setActiveMenu('home'); // Start on Grid Menu on fresh Google sign-in
+        }
+        const meta = pendingMetaRef.current;
         firebaseUser
           .getIdToken()
-          .then((idToken) => exchangeFirebaseTokenForStaffToken(idToken, pendingMeta?.role))
+          .then((idToken) => exchangeFirebaseTokenForStaffToken(idToken, meta?.role))
           .catch(() => null);
         try {
           const prof = await getOrCreateUserProfile({
             uid: firebaseUser.uid,
             displayName: firebaseUser.displayName || 'Pendidik SMK',
             email: firebaseUser.email || '',
-            preferredRole: pendingMeta?.role,
-            nip: pendingMeta?.nip,
+            preferredRole: meta?.role,
+            nip: meta?.nip,
           });
           const adminEmail =
             firebaseUser.emailVerified && firebaseUser.email === 'alamifal@smkn1sidayu.sch.id';
-          if (pendingMeta && (pendingMeta.nip || pendingMeta.role !== prof.staffRole)) {
+          if (meta && (meta.nip || meta.role !== prof.staffRole)) {
             const safeRole: StaffRole =
-              pendingMeta.role === 'admin' && !adminEmail && prof.staffRole !== 'admin'
+              meta.role === 'admin' && !adminEmail && prof.staffRole !== 'admin'
                 ? prof.staffRole
-                : pendingMeta.role;
+                : meta.role;
             await updateUserProfile(firebaseUser.uid, {
-              ...(pendingMeta.nip ? { nip: pendingMeta.nip } : {}),
+              ...(meta.nip ? { nip: meta.nip } : {}),
               staffRole: safeRole,
             });
             setProfile({
               ...prof,
-              ...(pendingMeta.nip ? { nip: pendingMeta.nip } : {}),
+              ...(meta.nip ? { nip: meta.nip } : {}),
               staffRole: safeRole,
             });
           } else {
@@ -272,7 +282,7 @@ export default function App() {
       setAuthReady(true);
     });
     return () => unsub();
-  }, [pendingMeta]);
+  }, []);
 
   // Firestore real-time subscriptions once authenticated via Google (when not in credential staffSession)
   useEffect(() => {

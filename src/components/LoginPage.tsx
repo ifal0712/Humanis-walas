@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
+import { GoogleAuthProvider, signInWithPopup, signInWithRedirect } from 'firebase/auth';
 import { auth, googleProvider } from '../lib/firebase';
 import { setWorkspaceAccessToken } from '../lib/googleWorkspaceService';
 import {
@@ -98,7 +98,35 @@ export const LoginPage: React.FC<LoginPageProps> = ({
     onSavePendingMeta({ nip: nip.trim(), role: selectedRole });
   };
 
+  const formatGoogleAuthError = (err: unknown): string => {
+    const code = (err as { code?: string })?.code || '';
+    const msg = err instanceof Error ? err.message : 'Gagal masuk dengan Google.';
+    if (code === 'auth/popup-closed-by-user' || msg.includes('popup-closed-by-user')) {
+      return 'Jendela login Google ditutup sebelum selesai. Silakan coba lagi.';
+    }
+    if (code === 'auth/popup-blocked' || msg.includes('popup-blocked')) {
+      return 'Jendela popup Google diblokir oleh browser. Izinkan popup untuk situs ini di pengaturan browser lalu coba lagi.';
+    }
+    if (code === 'auth/cancelled-popup-request' || msg.includes('cancelled-popup-request')) {
+      return 'Permintaan login Google sebelumnya dibatalkan. Silakan klik tombol sekali lagi.';
+    }
+    if (code === 'auth/unauthorized-domain' || msg.includes('unauthorized-domain')) {
+      return 'Domain pratinjau ini belum diotorisasi pada konfigurasi Firebase Authentication.';
+    }
+    if (code === 'auth/network-request-failed' || msg.includes('network-request-failed')) {
+      return 'Koneksi internet bermasalah saat menghubungi layanan Google. Periksa jaringan Anda lalu coba lagi.';
+    }
+    if (code === 'auth/operation-not-allowed' || msg.includes('operation-not-allowed')) {
+      return 'Metode Login dengan Google belum diaktifkan di proyek Firebase.';
+    }
+    if (code === 'auth/internal-error' || msg.includes('internal-error')) {
+      return 'Terjadi kendala internal otentikasi Google pada browser/iframe. Coba muat ulang halaman atau izinkan cookie pihak ketiga.';
+    }
+    return `Login Google gagal: ${msg}`;
+  };
+
   const handleGoogleLogin = async () => {
+    if (loading) return;
     setErrorMsg(null);
     setLoading(true);
     persistLoginPreferences();
@@ -109,12 +137,19 @@ export const LoginPage: React.FC<LoginPageProps> = ({
         setWorkspaceAccessToken(cred.accessToken, result.user.email);
       }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Gagal masuk dengan Google.';
-      setErrorMsg(
-        msg.includes('popup-closed-by-user')
-          ? 'Jendela login Google ditutup sebelum selesai. Silakan coba lagi.'
-          : `Login Google gagal: ${msg}`
-      );
+      const code = (err as { code?: string })?.code || '';
+      if (code === 'auth/popup-blocked') {
+        try {
+          // If popup is blocked outside nested iframe, attempt redirect sign-in
+          if (window.self === window.top) {
+            await signInWithRedirect(auth, googleProvider);
+            return;
+          }
+        } catch {
+          // fall through to user-friendly error message
+        }
+      }
+      setErrorMsg(formatGoogleAuthError(err));
     } finally {
       setLoading(false);
     }
